@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SISB Honor - Merit System</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+
+  <!-- SheetJS for Excel parsing -->
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
+</head>
+<body>
+  <!-- ============ TOAST CONTAINER ============ -->
+  <div id="toastContainer" class="toast-container"></div>
+
+  <!-- ============ LOGIN SCREEN ============ -->
+  <div id="loginScreen" class="screen login-screen">
+    <div class="login-card">
+      <div class="login-icon">
+        <svg width="48" height="48" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M24 4L6 12V22C6 33.1 13.68 43.28 24 46C34.32 43.28 42 33.1 42 22V12L24 4Z" fill="currentColor" opacity="0.9"/>
+          <path d="M24 14C27.3137 14 30 16.6863 30 20C30 23.3137 27.3137 26 24 26C20.6863 26 18 23.3137 18 20C18 16.6863 20.6863 14 24 14Z" fill="white" opacity="0.9"/>
+          <path d="M24 28C19 28 15 30 15 34V36H33V34C33 30 29 28 24 28Z" fill="white" opacity="0.9"/>
+        </svg>
+      </div>
+      <h1>SISB Honor</h1>
+      <p class="login-subtitle">Teacher Merit System</p>
+      <p class="login-description">Sign in with your school Google account to award merits to students.</p>
+      <button id="googleSignInBtn" class="btn btn-google">
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M19.6 10.227C19.6 9.518 19.536 8.837 19.418 8.182H10V12.05H15.382C15.1506 13.3 14.4458 14.359 13.386 15.068V17.578H16.618C18.509 15.836 19.6 13.273 19.6 10.227Z" fill="#4285F4"/>
+          <path d="M10 20C12.7 20 14.964 19.104 16.618 17.578L13.386 15.068C12.491 15.668 11.346 16.023 10 16.023C7.395 16.023 5.191 14.263 4.404 11.9H1.064V14.491C2.709 17.759 6.092 20 10 20Z" fill="#34A853"/>
+          <path d="M4.404 11.9C4.204 11.3 4.091 10.659 4.091 10C4.091 9.341 4.204 8.7 4.404 8.1V5.509H1.064C0.384 6.859 0 8.386 0 10C0 11.614 0.384 13.141 1.064 14.491L4.404 11.9Z" fill="#FBBC05"/>
+          <path d="M10 3.977C11.468 3.977 12.786 4.482 13.823 5.473L16.691 2.605C14.959 0.991 12.7 0 10 0C6.092 0 2.709 2.241 1.064 5.509L4.404 8.1C5.191 5.737 7.395 3.977 10 3.977Z" fill="#E94235"/>
+        </svg>
+        Sign in with Google
+      </button>
+      <p class="login-footer">Only authorized school staff can access this system.</p>
+    </div>
+  </div>
+
+  <!-- ============ MAIN DASHBOARD ============ -->
+  <div id="dashboardScreen" class="screen dashboard-screen" style="display: none;">
+    <!-- Header -->
+    <header class="dashboard-header">
+      <div class="header-left">
+        <h1 class="header-title"><a href="#" id="homeLink">SISB Honor</a></h1>
+        <span class="header-badge">Merit System</span>
+      </div>
+      <div class="header-right">
+        <button id="manageToggleBtn" class="btn btn-outline" title="Manage students">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 5v14"/><path d="M5 12h14"/>
+          </svg>
+          Students
+        </button>
+        <button id="teachersToggleBtn" class="btn btn-outline" title="Manage teachers">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+          </svg>
+          Teachers
+        </button>
+        <button id="scoreboardToggleBtn" class="btn btn-outline" title="House scoreboard">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/>
+          </svg>
+          Scoreboard
+        </button>
+        <button id="logToggleBtn" class="btn btn-outline" title="Activity log">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/>
+          </svg>
+          Log
+        </button>
+        <div class="user-info">
+          <img id="userAvatar" class="user-avatar" src="" alt="Avatar">
+          <span id="userEmail" class="user-email"></span>
+        </div>
+        <button id="logoutBtn" class="btn btn-outline" title="Sign out">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+            <polyline points="16 17 21 12 16 7"/>
+            <line x1="21" y1="12" x2="9" y2="12"/>
+          </svg>
+          Sign Out
+        </button>
+      </div>
+    </header>
+
+    <!-- ============ DASHBOARD VIEW ============ -->
+    <div id="dashboardView">
+      <main class="dashboard-content">
+        <!-- Stats Bar -->
+        <div class="stats-bar">
+          <div class="stat-card">
+            <span class="stat-label">Total Students</span>
+            <span id="totalStudents" class="stat-value">0</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label">Total Merits</span>
+            <span id="totalMerits" class="stat-value">0</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label">Top House</span>
+            <span id="topHouse" class="stat-value">—</span>
+          </div>
+        </div>
+
+        <!-- Loading State -->
+        <div id="loadingState" class="loading-state">
+          <div class="spinner"></div>
+          <p>Loading students...</p>
+        </div>
+
+        <!-- Empty State -->
+        <div id="emptyState" class="empty-state" style="display: none;">
+          <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.4">
+            <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
+            <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+            <line x1="8" y1="7" x2="16" y2="7"/>
+            <line x1="8" y1="11" x2="14" y2="11"/>
+          </svg>
+          <h3>No Students Yet</h3>
+          <p>Click <strong>"Manage Students"</strong> in the header to add students manually or import from an Excel file.</p>
+        </div>
+
+        <!-- Error State -->
+        <div id="errorState" class="error-state" style="display: none;">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"/>
+            <line x1="12" y1="8" x2="12" y2="12"/>
+            <line x1="12" y1="16" x2="12.01" y2="16"/>
+          </svg>
+          <h3>Something went wrong</h3>
+          <p id="errorMessage">An error occurred while loading data.</p>
+          <button id="retryBtn" class="btn btn-primary">Retry</button>
+        </div>
+
+        <!-- Two-column layout: House Sidebar + Student Grid -->
+        <div class="dashboard-layout" id="dashboardLayout">
+          <!-- House Sidebar (left) -->
+          <aside class="dashboard-sidebar" id="houseSidebar">
+            <div class="sidebar-header">
+              <h3 class="sidebar-title">🏆 Houses</h3>
+              <span class="sidebar-subtitle">Click to filter</span>
+            </div>
+            <div class="sidebar-list" id="sidebarHouseList"></div>
+          </aside>
+
+          <div class="dashboard-main">
+            <!-- Filter indicator -->
+            <div id="filterIndicator" class="filter-indicator" style="display: none;">
+              <span id="filterLabel"></span>
+              <button id="clearFilterBtn" class="btn btn-small btn-ghost">Show All</button>
+            </div>
+
+            <!-- Student Grid -->
+            <div id="studentGrid" class="student-grid" style="display: none;"></div>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <!-- ============ MANAGEMENT VIEW ============ -->
+    <div id="manageView" style="display: none;">
+      <main class="manage-content">
+        <div class="manage-header">
+          <h2>Manage Students</h2>
+          <button id="backToDashboardBtn" class="btn btn-outline">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/>
+            </svg>
+            Back to Dashboard
+          </button>
+          <button id="resetMeritsBtn" class="btn btn-danger">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M1 4v6h6"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
+            </svg>
+            Reset All Merits
+          </button>
+        </div>
+
+        <!-- Bulk Add -->
+        <div class="add-student-form">
+          <h3>Add Students (Bulk)</h3>
+          <div class="form-row form-row-bulk">
+            <div class="form-group form-group-textarea">
+              <label for="studentBulkInput">Student Names <span class="bulk-hint">— one per line</span></label>
+              <textarea id="studentBulkInput" class="form-textarea" placeholder="Alice Chen&#10;Benjamin Park&#10;Camila Rodriguez&#10;David Kim&#10;Elena Martinez" rows="5" spellcheck="false"></textarea>
+            </div>
+            <div class="form-group" style="flex: 0 0 180px;">
+              <label for="houseSelectBulk">House</label>
+              <select id="houseSelectBulk" class="form-select">
+                <option value="" disabled selected>Select house</option>
+                <option value="Green" class="opt-green">🟢 Green</option>
+                <option value="Blue" class="opt-blue">🔵 Blue</option>
+                <option value="Yellow" class="opt-yellow">🟡 Yellow</option>
+                <option value="Red" class="opt-red">🔴 Red</option>
+                <option value="Orange" class="opt-orange">🟠 Orange</option>
+              </select>
+            </div>
+            <button id="addStudentsBulkBtn" class="btn btn-primary">Add Students</button>
+          </div>
+        </div>
+
+        <!-- Excel Upload -->
+        <div class="upload-area" id="uploadArea">
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="17 8 12 3 7 8"/>
+            <line x1="12" y1="3" x2="12" y2="15"/>
+          </svg>
+          <h3>Import from Excel / CSV</h3>
+          <p>Drop a .xlsx, .xls, or .csv file here, or click to browse</p>
+          <input type="file" id="fileInput" accept=".xlsx,.xls,.csv">
+        </div>
+
+        <!-- Upload Preview -->
+        <div id="uploadPreview" class="upload-preview">
+          <div class="preview-header">
+            <h3>Preview</h3>
+            <span id="previewCount" style="font-size:0.8rem;color:var(--color-text-tertiary);"></span>
+          </div>
+          <div class="preview-table-wrap">
+            <table class="preview-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Name</th>
+                  <th>House</th>
+                </tr>
+              </thead>
+              <tbody id="previewBody"></tbody>
+            </table>
+          </div>
+          <div class="preview-actions">
+            <button id="importBtn" class="btn btn-primary">Import All</button>
+            <button id="cancelPreviewBtn" class="btn btn-outline">Cancel</button>
+          </div>
+        </div>
+
+        <!-- Existing Student List -->
+        <div class="student-list-section">
+          <div class="student-list-header">
+            <h3>Current Students</h3>
+            <span id="manageStudentCount" class="student-count-badge">0</span>
+          </div>
+          <div class="student-table-wrap">
+            <table class="student-table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>House</th>
+                  <th>Merits</th>
+                  <th style="width:60px;"></th>
+                </tr>
+              </thead>
+              <tbody id="manageStudentBody">
+                <tr>
+                  <td colspan="4" class="student-table-empty">No students yet. Add some above!</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <!-- ============ TEACHERS VIEW ============ -->
+    <div id="teachersView" style="display: none;">
+      <main class="manage-content">
+        <div class="manage-header">
+          <h2>Manage Teachers</h2>
+          <button id="backFromTeachersBtn" class="btn btn-outline">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/>
+            </svg>
+            Back to Dashboard
+          </button>
+        </div>
+
+        <!-- Add Teacher Form -->
+        <div class="add-student-form">
+          <h3>Add Authorized Teacher</h3>
+          <p style="font-size:0.82rem;color:var(--color-text-secondary);margin-bottom:14px;line-height:1.5;">
+            Enter a teacher's email to grant them access, or use the bulk field below to add multiple at once.
+          </p>
+          <div class="form-row" style="margin-bottom:14px;">
+            <div class="form-group">
+              <label for="teacherEmailInput">Email</label>
+              <input type="email" id="teacherEmailInput" class="form-input" placeholder="teacher@school.edu" autocomplete="off">
+            </div>
+            <button id="addTeacherBtn" class="btn btn-primary">Add Teacher</button>
+          </div>
+          <div class="form-row form-row-bulk">
+            <div class="form-group form-group-textarea">
+              <label for="teacherBulkInput">Bulk Add <span class="bulk-hint">— one email per line</span></label>
+              <textarea id="teacherBulkInput" class="form-textarea" placeholder="teacher1@school.edu&#10;teacher2@school.edu&#10;teacher3@school.edu" rows="4" spellcheck="false"></textarea>
+            </div>
+            <button id="addTeachersBulkBtn" class="btn btn-primary">Add Teachers</button>
+          </div>
+        </div>
+
+        <!-- Teacher List -->
+        <div class="student-list-section">
+          <div class="student-list-header">
+            <h3>Authorized Teachers</h3>
+            <span id="teacherCount" class="student-count-badge">0</span>
+          </div>
+          <div class="student-table-wrap">
+            <table class="student-table">
+              <thead>
+                <tr>
+                  <th>Email</th>
+                  <th style="width:60px;"></th>
+                </tr>
+              </thead>
+              <tbody id="teacherTableBody">
+                <tr>
+                  <td colspan="3" class="student-table-empty">No teachers added yet.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <!-- ============ SCOREBOARD VIEW ============ -->
+    <div id="scoreboardView" style="display: none;">
+      <main class="scoreboard-content">
+        <div class="manage-header">
+          <h2>🏆 House Scoreboard</h2>
+          <button id="backFromScoreboardBtn" class="btn btn-outline">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/>
+            </svg>
+            Back to Dashboard
+          </button>
+        </div>
+
+        <div id="scoreboardContent" class="scoreboard-grid">
+          <div class="loading-state" style="padding:60px 20px;">
+            <div class="spinner"></div>
+            <p>Loading scoreboard...</p>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <!-- ============ LOG VIEW ============ -->
+    <div id="logView" style="display: none;">
+      <main class="manage-content">
+        <div class="manage-header">
+          <h2>Teacher Activity Log</h2>
+          <button id="backFromLogBtn" class="btn btn-outline">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/>
+            </svg>
+            Back to Dashboard
+          </button>
+        </div>
+
+        <div class="student-list-section">
+          <div class="student-list-header">
+            <h3>Recent Merit Activity</h3>
+            <span id="logCount" class="student-count-badge">0</span>
+          </div>
+          <div class="student-table-wrap">
+            <table class="student-table">
+              <thead>
+                <tr>
+                  <th>Student</th>
+                  <th>House</th>
+                  <th>Teacher</th>
+                  <th>Time</th>
+                </tr>
+              </thead>
+              <tbody id="logTableBody">
+                <tr>
+                  <td colspan="4" class="student-table-empty">No merit activity yet.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <!-- Access Denied -->
+    <div id="accessDenied" class="error-state" style="display: none;">
+      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+        <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+      </svg>
+      <h3>Access Denied</h3>
+      <p>Your account is not authorized to use this system. Please contact your school administrator.</p>
+      <div class="uid-help">
+        <p>Your account UID (for setup):</p>
+        <code id="userUidDisplay" class="uid-copy">Loading...</code>
+        <button id="copyUidBtn" class="btn btn-small btn-outline">Copy UID</button>
+      </div>
+      <button id="logoutFromDeniedBtn" class="btn btn-outline" style="margin-top: 8px;">Sign Out</button>
+    </div>
+
+    <!-- Footer -->
+    <footer class="dashboard-footer">
+      <p>SISB Honor — Merit System</p>
+    </footer>
+  </div>
+
+  <!-- ============ APP ============ -->
+  <script type="module" src="app.js"></script>
+</body>
+</html>
