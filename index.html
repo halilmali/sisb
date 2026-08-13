@@ -100,7 +100,7 @@
             <span id="totalStudents" class="stat-value">0</span>
           </div>
           <div class="stat-card">
-            <span class="stat-label">Total Merits</span>
+            <span class="stat-label" id="totalPointsLabel">Total Honors</span>
             <span id="totalMerits" class="stat-value">0</span>
           </div>
           <div class="stat-card">
@@ -151,6 +151,30 @@
           </aside>
 
           <div class="dashboard-main">
+            <!-- Point type tabs -->
+            <div class="grid-tabs">
+              <button class="grid-tab active" data-point-type="honor">🏅 Honor</button>
+              <button class="grid-tab" data-point-type="uniform">👔 Uniform</button>
+            </div>
+
+            <!-- Filters: class + sort -->
+            <div class="filter-toolbar">
+              <div class="filter-control">
+                <label for="classFilterSelect" class="class-filter-label">Class</label>
+                <select id="classFilterSelect" class="form-select class-filter-select">
+                  <option value="">All Classes</option>
+                </select>
+              </div>
+              <div class="filter-control">
+                <label for="sortFilterSelect" class="class-filter-label">Sort</label>
+                <select id="sortFilterSelect" class="form-select class-filter-select">
+                  <option value="name" selected>Name (A–Z)</option>
+                  <option value="honor">Honor points</option>
+                  <option value="uniform">Uniform points</option>
+                </select>
+              </div>
+            </div>
+
             <!-- Filter indicator -->
             <div id="filterIndicator" class="filter-indicator" style="display: none;">
               <span id="filterLabel"></span>
@@ -179,21 +203,21 @@
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M1 4v6h6"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
             </svg>
-            Reset All Merits
+            Reset All Points
           </button>
         </div>
 
-        <!-- Bulk Add -->
+        <!-- Single Add -->
         <div class="add-student-form">
-          <h3>Add Students (Bulk)</h3>
-          <div class="form-row form-row-bulk">
-            <div class="form-group form-group-textarea">
-              <label for="studentBulkInput">Student Names <span class="bulk-hint">— one per line</span></label>
-              <textarea id="studentBulkInput" class="form-textarea" placeholder="Alice Chen&#10;Benjamin Park&#10;Camila Rodriguez&#10;David Kim&#10;Elena Martinez" rows="5" spellcheck="false"></textarea>
+          <h3>Add Student</h3>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="studentNameInput">Name</label>
+              <input type="text" id="studentNameInput" class="form-input" placeholder="Student name" autocomplete="off">
             </div>
-            <div class="form-group" style="flex: 0 0 180px;">
-              <label for="houseSelectBulk">House</label>
-              <select id="houseSelectBulk" class="form-select">
+            <div class="form-group" style="flex: 0 0 150px;">
+              <label for="studentHouseSelect">House</label>
+              <select id="studentHouseSelect" class="form-select">
                 <option value="" disabled selected>Select house</option>
                 <option value="Green" class="opt-green">🟢 Green</option>
                 <option value="Blue" class="opt-blue">🔵 Blue</option>
@@ -202,11 +226,27 @@
                 <option value="Orange" class="opt-orange">🟠 Orange</option>
               </select>
             </div>
-            <button id="addStudentsBulkBtn" class="btn btn-primary">Add Students</button>
+            <div class="form-group" style="flex: 0 0 130px;">
+              <label for="studentClassInput">Class</label>
+              <input type="text" id="studentClassInput" class="form-input" placeholder="e.g. 7A" autocomplete="off">
+            </div>
+            <div class="form-group" style="flex: 0 0 230px;">
+              <label for="studentEmailInput">Email</label>
+              <input type="email" id="studentEmailInput" class="form-input" placeholder="student@school.edu" autocomplete="off">
+            </div>
+            <button id="addStudentSingleBtn" class="btn btn-primary">Add Student</button>
           </div>
         </div>
 
         <!-- Excel Upload -->
+        <div class="upload-toolbar">
+          <button id="downloadTemplateBtn" class="btn btn-outline">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+            </svg>
+            Download Excel Template
+          </button>
+        </div>
         <div class="upload-area" id="uploadArea">
           <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
@@ -231,6 +271,8 @@
                   <th>#</th>
                   <th>Name</th>
                   <th>House</th>
+                  <th>Class</th>
+                  <th>Email</th>
                 </tr>
               </thead>
               <tbody id="previewBody"></tbody>
@@ -254,13 +296,16 @@
                 <tr>
                   <th>Name</th>
                   <th>House</th>
-                  <th>Merits</th>
+                  <th>Class</th>
+                  <th>Honor</th>
+                  <th>Uniform</th>
+                  <th>Email</th>
                   <th style="width:60px;"></th>
                 </tr>
               </thead>
               <tbody id="manageStudentBody">
                 <tr>
-                  <td colspan="4" class="student-table-empty">No students yet. Add some above!</td>
+                  <td colspan="7" class="student-table-empty">No students yet. Add some above!</td>
                 </tr>
               </tbody>
             </table>
@@ -342,6 +387,11 @@
           </button>
         </div>
 
+        <div class="scoreboard-tabs">
+          <button class="scoreboard-tab active" data-scoreboard-type="honor">🏅 Honors</button>
+          <button class="scoreboard-tab" data-scoreboard-type="uniform">👔 Uniform</button>
+        </div>
+
         <div id="scoreboardContent" class="scoreboard-grid">
           <div class="loading-state" style="padding:60px 20px;">
             <div class="spinner"></div>
@@ -375,16 +425,38 @@
                 <tr>
                   <th>Student</th>
                   <th>House</th>
+                  <th>Type</th>
                   <th>Teacher</th>
                   <th>Time</th>
                 </tr>
               </thead>
               <tbody id="logTableBody">
                 <tr>
-                  <td colspan="4" class="student-table-empty">No merit activity yet.</td>
+                  <td colspan="5" class="student-table-empty">No merit activity yet.</td>
                 </tr>
               </tbody>
             </table>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <!-- ============ STUDENT VIEW ============ -->
+    <div id="studentView" style="display: none;">
+      <main class="student-content">
+        <div class="student-profile-card">
+          <p id="studentProfileEmpty" class="student-profile-empty" style="display: none;">
+            No student account is linked to this email yet. Contact your administrator.
+          </p>
+          <div class="student-profile-points">
+            <div class="student-profile-point">
+              <span class="point-label point-label-honor">Honor</span>
+              <span id="studentProfileHonor" class="student-profile-point-value">0</span>
+            </div>
+            <div class="student-profile-point">
+              <span class="point-label point-label-uniform">Uniform</span>
+              <span id="studentProfileUniform" class="student-profile-point-value">0</span>
+            </div>
           </div>
         </div>
       </main>

@@ -16,12 +16,14 @@ import {
   collection,
   doc,
   getDoc,
+  getDocs,
   setDoc,
   addDoc,
   updateDoc,
   deleteDoc,
   increment,
   query,
+  where,
   onSnapshot,
   orderBy,
   limit,
@@ -103,6 +105,7 @@ const toastContainer    = $("#toastContainer");
 const dashboardView     = $("#dashboardView");
 const totalStudentsEl   = $("#totalStudents");
 const totalMeritsEl     = $("#totalMerits");
+const totalPointsLabel  = $("#totalPointsLabel");
 const topHouseEl        = $("#topHouse");
 const studentGrid       = $("#studentGrid");
 const loadingState      = $("#loadingState");
@@ -147,9 +150,13 @@ const logToggleBtn         = $("#logToggleBtn");
 const backFromLogBtn       = $("#backFromLogBtn");
 const logTableBody         = $("#logTableBody");
 const logCount             = $("#logCount");
-const studentBulkInput  = $("#studentBulkInput");
-const houseSelectBulk   = $("#houseSelectBulk");
-const addStudentsBulkBtn = $("#addStudentsBulkBtn");
+const studentNameInput    = $("#studentNameInput");
+const studentHouseSelect  = $("#studentHouseSelect");
+const studentClassInput   = $("#studentClassInput");
+const studentEmailInput   = $("#studentEmailInput");
+const addStudentSingleBtn = $("#addStudentSingleBtn");
+const classFilterSelect = $("#classFilterSelect");
+const sortFilterSelect  = $("#sortFilterSelect");
 const uploadArea        = $("#uploadArea");
 const fileInput         = $("#fileInput");
 const uploadPreview     = $("#uploadPreview");
@@ -160,16 +167,29 @@ const cancelPreviewBtn  = $("#cancelPreviewBtn");
 const manageStudentBody = $("#manageStudentBody");
 const manageStudentCount = $("#manageStudentCount");
 
+/* Student view */
+const studentView           = $("#studentView");
+const studentProfileEmpty   = $("#studentProfileEmpty");
+const studentProfileHonor   = $("#studentProfileHonor");
+const studentProfileUniform = $("#studentProfileUniform");
+const downloadTemplateBtn   = $("#downloadTemplateBtn");
+
 /* ========================================
    STATE
    ======================================== */
 let currentUser = null;
+let currentStudent = null;
 let unsubscribeStudents = null;
+let unsubscribeStudent = null;
 let unsubscribeTeachers = null;
 let unsubscribeLog = null;
 let allStudents = [];
 let parsedImportData = [];
 let selectedHouse = null;
+let selectedClass = null;
+let scoreboardType = "honor";
+let pointType = "honor"; // grid-wide: "honor" | "uniform"
+let sortBy = "name"; // "name" | "honor" | "uniform"
 
 /* ========================================
    TOAST SYSTEM
@@ -192,20 +212,32 @@ onAuthStateChanged(auth, async (user) => {
   console.log("Auth state changed:", user ? user.email : "null");
   if (user) {
     currentUser = user;
-    const authorized = await checkIfAllowed(user.email);
-    if (authorized) {
-      await fetchAdminConfig();
+    await fetchAdminConfig();
+    const isTeacher = await checkIfAllowed(user.email);
+    if (isTeacher) {
       showDashboardView();
       setupRealTimeListener();
     } else {
-      showAccessDenied();
+      const student = await findStudentByEmail(user.email);
+      if (student) {
+        currentStudent = student;
+        showStudentView();
+        setupStudentListener();
+      } else {
+        showAccessDenied();
+      }
     }
   } else {
     currentUser = null;
+    currentStudent = null;
     showLogin();
     if (unsubscribeStudents) {
       unsubscribeStudents();
       unsubscribeStudents = null;
+    }
+    if (unsubscribeStudent) {
+      unsubscribeStudent();
+      unsubscribeStudent = null;
     }
   }
 });
@@ -266,6 +298,67 @@ if (copyUidBtn) {
 }
 
 /* ========================================
+   STUDENT VIEW
+   ======================================== */
+function showStudentView() {
+  loginScreen.style.display = "none";
+  dashboardScreen.style.display = "flex";
+  dashboardView.style.display = "none";
+  manageView.style.display = "none";
+  teachersView.style.display = "none";
+  logView.style.display = "none";
+  scoreboardView.style.display = "none";
+  accessDenied.style.display = "none";
+  studentView.style.display = "block";
+  userAvatar.src = currentUser?.photoURL || "";
+  userAvatar.style.display = currentUser?.photoURL ? "block" : "none";
+  userEmail.textContent = currentUser?.email || "";
+
+  // Students only see their own points — hide all management buttons
+  manageToggleBtn.style.display = "none";
+  teachersToggleBtn.style.display = "none";
+  logToggleBtn.style.display = "none";
+  scoreboardToggleBtn.style.display = "none";
+
+  renderStudentView();
+}
+
+function renderStudentView() {
+  const s = currentStudent;
+  if (!s) return;
+
+  studentProfileHonor.textContent = s.merits || 0;
+  studentProfileUniform.textContent = s.uniformPoints || 0;
+  studentProfileEmpty.style.display = "none";
+}
+
+function setupStudentListener() {
+  if (unsubscribeStudent) unsubscribeStudent();
+
+  const q = query(
+    collection(db, "students"),
+    where("email", "==", currentUser.email.toLowerCase()),
+    limit(1)
+  );
+
+  unsubscribeStudent = onSnapshot(
+    q,
+    (snap) => {
+      if (!snap.empty) {
+        currentStudent = { id: snap.docs[0].id, ...snap.docs[0].data() };
+        renderStudentView();
+      } else {
+        currentStudent = null;
+        studentProfileEmpty.style.display = "";
+      }
+    },
+    (error) => {
+      console.error("Student listener error:", error);
+    }
+  );
+}
+
+/* ========================================
    CHECK IF USER IS ALLOWED
    ======================================== */
 async function checkIfAllowed(email) {
@@ -277,6 +370,27 @@ async function checkIfAllowed(email) {
   } catch (error) {
     console.error("Error checking allowed users:", error);
     return false;
+  }
+}
+
+/* ========================================
+   FIND STUDENT BY EMAIL
+   ======================================== */
+async function findStudentByEmail(email) {
+  try {
+    const q = query(
+      collection(db, "students"),
+      where("email", "==", email.toLowerCase()),
+      limit(1)
+    );
+    const snap = await getDocs(q);
+    if (!snap.empty) {
+      return { id: snap.docs[0].id, ...snap.docs[0].data() };
+    }
+    return null;
+  } catch (error) {
+    console.error("Error finding student:", error);
+    return null;
   }
 }
 
@@ -308,6 +422,7 @@ function showDashboardView() {
   teachersToggleBtn.style.display = isAdmin() ? "" : "none";
   logToggleBtn.style.display = isAdmin() ? "" : "none";
   scoreboardToggleBtn.style.display = "";
+  studentView.style.display = "none";
 
   showLoading();
 }
@@ -328,6 +443,7 @@ function showAccessDenied() {
   teachersView.style.display = "none";
   logView.style.display = "none";
   scoreboardView.style.display = "none";
+  studentView.style.display = "none";
   loadingState.style.display = "none";
   emptyState.style.display = "none";
   errorState.style.display = "none";
@@ -403,6 +519,14 @@ backFromScoreboardBtn.addEventListener("click", () => {
   dashboardView.style.display = "block";
 });
 
+/* Scoreboard tabs — Honors / Uniform */
+document.querySelectorAll(".scoreboard-tab").forEach((tab) => {
+  tab.addEventListener("click", () => {
+    scoreboardType = tab.dataset.scoreboardType === "uniform" ? "uniform" : "honor";
+    renderScoreboard();
+  });
+});
+
 /* ========================================
    LOG VIEW TOGGLING
    ======================================== */
@@ -458,6 +582,7 @@ function setupRealTimeListener() {
       const students = [];
       snapshot.forEach((d) => students.push({ id: d.id, ...d.data() }));
       allStudents = students;
+      populateClassFilter();
 
       if (students.length === 0) {
         showEmptyState();
@@ -498,33 +623,45 @@ function showEmptyState() {
    RENDER DASHBOARD STUDENT GRID
    ======================================== */
 function renderStudents(students) {
-  // Filter by selected house if active
-  const filtered = selectedHouse
-    ? students.filter((s) => s.house === selectedHouse)
-    : [...students];
+  // Filter by selected house and class if active
+  let filtered = [...students];
+  if (selectedHouse) {
+    filtered = filtered.filter((s) => s.house === selectedHouse);
+  }
+  if (selectedClass) {
+    filtered = filtered.filter((s) => (s.className || "") === selectedClass);
+  }
 
-  // Sort: by house order, then by merits descending
+  // Sort: by name by default; by points (honor or uniform) when selected
   filtered.sort((a, b) => {
-    const hi = HOUSES.indexOf(a.house) - HOUSES.indexOf(b.house);
-    if (hi !== 0) return hi;
-    return (b.merits || 0) - (a.merits || 0);
+    const byName = () => (a.name || "").localeCompare(b.name || "", undefined, { sensitivity: "base" });
+    if (sortBy === "name") return byName();
+    const field = sortBy === "uniform" ? "uniformPoints" : "merits";
+    const diff = (b[field] || 0) - (a[field] || 0);
+    if (diff !== 0) return diff;
+    return byName();
   });
 
   // Show/hide filter indicator
-  if (selectedHouse) {
+  if (selectedHouse || selectedClass) {
     const count = filtered.length;
+    const parts = [];
+    if (selectedHouse) parts.push(`${HOUSE_EMOJIS[selectedHouse]} <strong>${selectedHouse}</strong>`);
+    if (selectedClass) parts.push(`Class <strong>${escapeHtml(selectedClass)}</strong>`);
     filterIndicator.style.display = "flex";
-    filterLabel.innerHTML = `${HOUSE_EMOJIS[selectedHouse]} <strong>${selectedHouse}</strong> — ${count} student${count !== 1 ? "s" : ""}`;
+    filterLabel.innerHTML = `${parts.join(" · ")} — ${count} student${count !== 1 ? "s" : ""}`;
   } else {
     filterIndicator.style.display = "none";
   }
 
   if (filtered.length === 0) {
     studentGrid.innerHTML = `<div class="empty-state" style="display:flex;padding:40px 20px;">
-      <p style="font-size:0.9rem;color:var(--color-text-tertiary);">No students in ${selectedHouse} house yet.</p>
+      <p style="font-size:0.9rem;color:var(--color-text-tertiary);">No students match the current filters.</p>
     </div>`;
     return;
   }
+
+  const pointLabel = pointType === "uniform" ? "uniform" : "honor";
 
   studentGrid.innerHTML = filtered
     .map((student) => {
@@ -536,29 +673,89 @@ function renderStudents(students) {
           <div class="student-info">
             <div class="student-name">${escapeHtml(student.name)}</div>
             <span class="student-house-badge house-badge-${key}">${student.house}</span>
+            ${student.className ? `<span class="student-class-badge">${escapeHtml(student.className)}</span>` : ''}
           </div>
-          <div class="student-merits">
-            ${isAdmin() ? `<button class="merit-btn merit-btn-minus" data-student-id="${student.id}" data-student-name="${escapeHtml(student.name)}" data-house="${student.house}" title="Remove merit from ${escapeHtml(student.name)}">−</button>` : ''}
-            <span class="merit-count" id="merits-${student.id}">${student.merits || 0}</span>
-            <button class="merit-btn merit-btn-plus" data-student-id="${student.id}" data-student-name="${escapeHtml(student.name)}" data-house="${student.house}" title="Give merit to ${escapeHtml(student.name)}">+</button>
+          <div class="student-points">
+            <div class="point-controls">
+              ${isAdmin() ? `<button class="merit-btn merit-btn-minus" data-type="${pointType}" data-student-id="${student.id}" data-student-name="${escapeHtml(student.name)}" data-house="${student.house}" title="Remove ${pointLabel} point from ${escapeHtml(student.name)}">−</button>` : ''}
+              <span class="merit-count" id="${pointType}-${student.id}">${pointType === "uniform" ? (student.uniformPoints || 0) : (student.merits || 0)}</span>
+              <button class="merit-btn merit-btn-plus" data-type="${pointType}" data-student-id="${student.id}" data-student-name="${escapeHtml(student.name)}" data-house="${student.house}" title="Give ${pointLabel} point to ${escapeHtml(student.name)}">+</button>
+              ${isAdmin() ? `<button class="merit-btn merit-btn-plus25" data-type="${pointType}" data-student-id="${student.id}" data-student-name="${escapeHtml(student.name)}" data-house="${student.house}" title="Give 25 ${pointLabel} points (admin only)">+25</button>` : ''}
+            </div>
           </div>
         </div>`;
     })
     .join("");
 
   document.querySelectorAll(".merit-btn-plus").forEach((btn) => {
-    btn.addEventListener("click", handleMeritClick);
+    btn.addEventListener("click", handlePointClick);
+  });
+  document.querySelectorAll(".merit-btn-plus25").forEach((btn) => {
+    btn.addEventListener("click", handlePointClick);
   });
   document.querySelectorAll(".merit-btn-minus").forEach((btn) => {
-    btn.addEventListener("click", handleMeritDecrement);
+    btn.addEventListener("click", handlePointClick);
   });
 }
+
+/* ========================================
+   GRID POINT TYPE TABS — Honor / Uniform
+   ======================================== */
+document.querySelectorAll(".grid-tab").forEach((tab) => {
+  tab.addEventListener("click", () => {
+    pointType = tab.dataset.pointType === "uniform" ? "uniform" : "honor";
+    document.querySelectorAll(".grid-tab").forEach((t) => {
+      t.classList.toggle("active", t.dataset.pointType === pointType);
+    });
+    renderStudents(allStudents);
+    updateStats(allStudents);
+  });
+});
 
 function escapeHtml(text) {
   const d = document.createElement("div");
   d.textContent = text;
   return d.innerHTML;
 }
+
+function escapeAttr(text) {
+  return escapeHtml(text).replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+
+/* ========================================
+   CLASS FILTER — POPULATE OPTIONS
+   ======================================== */
+function populateClassFilter() {
+  const classes = [...new Set(
+    allStudents.map((s) => (s.className || "").trim()).filter(Boolean)
+  )].sort();
+
+  const current = classFilterSelect.value;
+  classFilterSelect.innerHTML =
+    `<option value="">All Classes</option>` +
+    classes.map((c) => `<option value="${escapeAttr(c)}">${escapeHtml(c)}</option>`).join("");
+
+  // Restore selection if the class still exists
+  classFilterSelect.value = classes.includes(current) ? current : "";
+  if (!classes.includes(current)) selectedClass = null;
+}
+
+classFilterSelect.addEventListener("change", () => {
+  const val = classFilterSelect.value;
+  // Toggle: selecting the same class deselects it
+  if (val === selectedClass) {
+    selectedClass = null;
+    classFilterSelect.value = "";
+  } else {
+    selectedClass = val || null;
+  }
+  renderStudents(allStudents);
+});
+
+sortFilterSelect.addEventListener("change", () => {
+  sortBy = sortFilterSelect.value;
+  renderStudents(allStudents);
+});
 
 /* ========================================
    SIDEBAR — CLICKABLE HOUSE LIST
@@ -626,6 +823,8 @@ function renderSidebar(students) {
    ======================================== */
 clearFilterBtn.addEventListener("click", () => {
   selectedHouse = null;
+  selectedClass = null;
+  classFilterSelect.value = "";
   renderSidebar(allStudents);
   renderStudents(allStudents);
 });
@@ -635,12 +834,15 @@ clearFilterBtn.addEventListener("click", () => {
    ======================================== */
 function updateStats(students) {
   totalStudentsEl.textContent = students.length;
-  const totalMerits = students.reduce((s, st) => s + (st.merits || 0), 0);
-  totalMeritsEl.textContent = totalMerits;
+
+  const field = pointType === "uniform" ? "uniformPoints" : "merits";
+  const totalPoints = students.reduce((s, st) => s + (st[field] || 0), 0);
+  totalMeritsEl.textContent = totalPoints;
+  totalPointsLabel.textContent = pointType === "uniform" ? "Total Uniform" : "Total Honors";
 
   const houseTotals = {};
   for (const s of students) {
-    houseTotals[s.house] = (houseTotals[s.house] || 0) + (s.merits || 0);
+    houseTotals[s.house] = (houseTotals[s.house] || 0) + (s[field] || 0);
   }
   let topHouse = "—", topScore = -1;
   for (const [h, sc] of Object.entries(houseTotals)) {
@@ -654,6 +856,13 @@ function updateStats(students) {
    ======================================== */
 function renderScoreboard() {
   const students = allStudents;
+  const field = scoreboardType === "uniform" ? "uniformPoints" : "merits";
+  const label = scoreboardType === "uniform" ? "Uniform" : "Honors";
+
+  // Highlight the active tab
+  document.querySelectorAll(".scoreboard-tab").forEach((t) => {
+    t.classList.toggle("active", t.dataset.scoreboardType === scoreboardType);
+  });
 
   if (students.length === 0) {
     scoreboardContent.innerHTML = `
@@ -662,7 +871,7 @@ function renderScoreboard() {
           <path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/>
         </svg>
         <h3>No Data Yet</h3>
-        <p>Add students and give merits to see the scoreboard.</p>
+        <p>Add students and award points to see the scoreboard.</p>
       </div>`;
     return;
   }
@@ -671,7 +880,7 @@ function renderScoreboard() {
   const houseData = {};
   for (const house of HOUSES) {
     const members = students.filter((s) => s.house === house);
-    const total = members.reduce((s, st) => s + (st.merits || 0), 0);
+    const total = members.reduce((s, st) => s + (st[field] || 0), 0);
     const avg = members.length > 0 ? Math.round(total / members.length) : 0;
     houseData[house] = { total, count: members.length, avg };
   }
@@ -720,7 +929,7 @@ function renderScoreboard() {
           </div>
           <div class="scoreboard-merits">
             <div class="scoreboard-merit-number">${data.total}</div>
-            <div class="scoreboard-merit-label">Merits</div>
+            <div class="scoreboard-merit-label">${label}</div>
           </div>
         </div>`;
     })
@@ -728,80 +937,57 @@ function renderScoreboard() {
 }
 
 /* ========================================
-   GIVE MERIT
+   AWARD / REMOVE POINTS (honor or uniform)
    ======================================== */
-async function handleMeritClick(e) {
+async function handlePointClick(e) {
   const btn = e.currentTarget;
   const studentId = btn.dataset.studentId;
   const studentName = btn.dataset.studentName;
   const house = btn.dataset.house || "";
+  const type = btn.dataset.type === "uniform" ? "uniform" : "honor";
+  const isMinus = btn.classList.contains("merit-btn-minus");
+  const isPlus25 = btn.classList.contains("merit-btn-plus25");
+  const change = isMinus ? -1 : (isPlus25 ? 25 : 1);
+  const label = type === "uniform" ? "uniform point" : "honor point";
+  const pluralLabel = Math.abs(change) === 1 ? label : label + "s";
+
+  // Minus buttons can't go below zero
+  if (isMinus) {
+    const student = allStudents.find(s => s.id === studentId);
+    const current = type === "uniform" ? (student?.uniformPoints || 0) : (student?.merits || 0);
+    if (!student || current <= 0) {
+      showToast(`${studentName} has no ${label}s to remove.`, "error");
+      return;
+    }
+  }
 
   btn.disabled = true;
   try {
-    await updateDoc(doc(db, "students", studentId), { merits: increment(1) });
+    const update = type === "uniform"
+      ? { uniformPoints: increment(change) }
+      : { merits: increment(change) };
+    await updateDoc(doc(db, "students", studentId), update);
     await addDoc(collection(db, "meritLog"), {
       studentId,
       studentName,
       house,
+      type,
       teacherEmail: currentUser.email,
       timestamp: serverTimestamp(),
-      change: 1
+      change
     });
 
-    const countEl = document.getElementById(`merits-${studentId}`);
+    const countEl = document.getElementById(`${type}-${studentId}`);
     if (countEl) {
       countEl.classList.remove("merit-pop");
       void countEl.offsetWidth;
       countEl.classList.add("merit-pop");
     }
-    showToast(`+1 merit for ${studentName}! 🎉`, "success");
+    showToast(change > 0 ? `+${change} ${pluralLabel} for ${studentName}! 🎉` : `-${Math.abs(change)} ${pluralLabel} for ${studentName}`, change > 0 ? "success" : "info");
     setTimeout(() => { btn.disabled = false; }, 400);
   } catch (error) {
-    console.error("Error giving merit:", error);
-    showToast("Failed to give merit. Please try again.", "error");
-    btn.disabled = false;
-  }
-}
-
-/* ========================================
-   DECREMENT MERIT (admin only)
-   ======================================== */
-async function handleMeritDecrement(e) {
-  const btn = e.currentTarget;
-  const studentId = btn.dataset.studentId;
-  const studentName = btn.dataset.studentName;
-  const house = btn.dataset.house || "";
-
-  // Check current merits
-  const student = allStudents.find(s => s.id === studentId);
-  if (!student || (student.merits || 0) <= 0) {
-    showToast(`${studentName} has no merits to remove.`, "error");
-    return;
-  }
-
-  btn.disabled = true;
-  try {
-    await updateDoc(doc(db, "students", studentId), { merits: increment(-1) });
-    await addDoc(collection(db, "meritLog"), {
-      studentId,
-      studentName,
-      house,
-      teacherEmail: currentUser.email,
-      timestamp: serverTimestamp(),
-      change: -1
-    });
-
-    const countEl = document.getElementById(`merits-${studentId}`);
-    if (countEl) {
-      countEl.classList.remove("merit-pop");
-      void countEl.offsetWidth;
-      countEl.classList.add("merit-pop");
-    }
-    showToast(`-1 merit for ${studentName}`, "info");
-    setTimeout(() => { btn.disabled = false; }, 400);
-  } catch (error) {
-    console.error("Error removing merit:", error);
-    showToast("Failed to remove merit. Please try again.", "error");
+    console.error("Error updating points:", error);
+    showToast("Failed to update points. Please try again.", "error");
     btn.disabled = false;
   }
 }
@@ -892,7 +1078,7 @@ document.getElementById("resetMeritsBtn")?.addEventListener("click", async () =>
   if (!isAdmin()) return;
   const count = allStudents.length;
   if (count === 0) { showToast("No students to reset.", "error"); return; }
-  if (!confirm(`Reset ALL merits for ${count} student${count !== 1 ? "s" : ""} to 0? This cannot be undone.`)) return;
+  if (!confirm(`Reset ALL honor and uniform points for ${count} student${count !== 1 ? "s" : ""} to 0? This cannot be undone.`)) return;
 
   const btn = document.getElementById("resetMeritsBtn");
   btn.disabled = true;
@@ -902,10 +1088,10 @@ document.getElementById("resetMeritsBtn")?.addEventListener("click", async () =>
     const batch = writeBatch(db);
     for (const student of allStudents) {
       const ref = doc(db, "students", student.id);
-      batch.update(ref, { merits: 0 });
+      batch.update(ref, { merits: 0, uniformPoints: 0 });
     }
     await batch.commit();
-    showToast(`Reset merits for all ${count} students! ✅`, "success");
+    showToast(`Reset points for all ${count} students! ✅`, "success");
   } catch (error) {
     console.error("Error resetting merits:", error);
     showToast("Failed to reset merits. Please try again.", "error");
@@ -986,7 +1172,7 @@ function renderLogList(entries) {
   logCount.textContent = entries.length;
 
   if (entries.length === 0) {
-    logTableBody.innerHTML = `<tr><td colspan="4" class="student-table-empty">No merit activity yet.</td></tr>`;
+    logTableBody.innerHTML = `<tr><td colspan="5" class="student-table-empty">No merit activity yet.</td></tr>`;
     return;
   }
 
@@ -996,6 +1182,7 @@ function renderLogList(entries) {
       <tr>
         <td>${escapeHtml(e.studentName || "—")}</td>
         <td>${e.house ? `<span class="house-dot house-dot-${e.house.toLowerCase()}"></span>${escapeHtml(e.house)}` : "—"}</td>
+        <td>${e.type === "uniform" ? "Uniform" : "Honor"}${typeof e.change === "number" ? ` ${e.change > 0 ? "+" : ""}${e.change}` : ""}</td>
         <td>${escapeHtml(e.teacherEmail || "—")}</td>
         <td style="white-space:nowrap;color:var(--color-text-tertiary);font-size:0.8rem;">${formatTime(e.timestamp)}</td>
       </tr>`
@@ -1039,53 +1226,52 @@ addTeachersBulkBtn.addEventListener("click", async () => {
 });
 
 /* ========================================
-   MANAGE — ADD STUDENTS (BULK)
+   MANAGE — ADD SINGLE STUDENT
    ======================================== */
-addStudentsBulkBtn.addEventListener("click", async () => {
+addStudentSingleBtn.addEventListener("click", async () => {
   if (!isAdmin()) { showToast("Only the admin can add students.", "error"); return; }
-  const raw = studentBulkInput.value;
-  const house = houseSelectBulk.value;
+  const name = studentNameInput.value.trim();
+  const house = studentHouseSelect.value;
+  const className = studentClassInput.value.trim();
+  const email = studentEmailInput.value.trim().toLowerCase();
 
-  // Parse lines, filter empty
-  const names = raw
-    .split("\n")
-    .map((l) => l.trim())
-    .filter((l) => l.length > 0);
-
-  if (names.length === 0) { showToast("Please enter at least one student name.", "error"); return; }
+  if (!name) { showToast("Please enter the student's name.", "error"); return; }
   if (!house) { showToast("Please select a house.", "error"); return; }
-
-  addStudentsBulkBtn.disabled = true;
-  addStudentsBulkBtn.textContent = `Adding ${names.length}...`;
-
-  try {
-    const batch = writeBatch(db);
-    for (const name of names) {
-      const ref = doc(collection(db, "students"));
-      batch.set(ref, {
-        name,
-        house,
-        merits: 0,
-        createdAt: serverTimestamp()
-      });
-    }
-    await batch.commit();
-
-    showToast(`Added ${names.length} student${names.length > 1 ? "s" : ""} to ${house} house! ✅`, "success");
-    studentBulkInput.value = "";
-    houseSelectBulk.value = "";
-  } catch (error) {
-    console.error("Error adding students:", error);
-    showToast("Failed to add students. Please try again.", "error");
+  if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+    showToast("Please enter a valid email address.", "error");
+    return;
   }
 
-  addStudentsBulkBtn.disabled = false;
-  addStudentsBulkBtn.textContent = "Add Students";
+  addStudentSingleBtn.disabled = true;
+  addStudentSingleBtn.textContent = "Adding...";
+
+  try {
+    await addDoc(collection(db, "students"), {
+      name,
+      house,
+      className,
+      email,
+      merits: 0,
+      uniformPoints: 0,
+      createdAt: serverTimestamp()
+    });
+    showToast(`Added ${name} to ${house} house! ✅`, "success");
+    studentNameInput.value = "";
+    studentHouseSelect.value = "";
+    studentClassInput.value = "";
+    studentEmailInput.value = "";
+  } catch (error) {
+    console.error("Error adding student:", error);
+    showToast("Failed to add student. Please try again.", "error");
+  }
+
+  addStudentSingleBtn.disabled = false;
+  addStudentSingleBtn.textContent = "Add Student";
 });
 
 /* ========================================
    MANAGE — EXCEL / CSV IMPORT
-   ======================================== */
+   ========================================
 
 // Click upload area to trigger file input
 uploadArea.addEventListener("click", () => fileInput.click());
@@ -1137,6 +1323,8 @@ function handleFile(file) {
       const headers = Object.keys(json[0]);
       const nameKey = headers.find((h) => h.toLowerCase().trim() === "name");
       const houseKey = headers.find((h) => h.toLowerCase().trim() === "house");
+      const classKey = headers.find((h) => h.toLowerCase().trim() === "class");
+      const emailKey = headers.find((h) => h.toLowerCase().trim() === "email");
 
       if (!nameKey || !houseKey) {
         showToast("File must have 'Name' and 'House' columns.", "error");
@@ -1151,6 +1339,8 @@ function handleFile(file) {
       json.forEach((row, i) => {
         const rawName = String(row[nameKey]).trim();
         const rawHouse = String(row[houseKey]).trim();
+        const rawClass = classKey ? String(row[classKey]).trim() : "";
+        const rawEmail = emailKey ? String(row[emailKey]).trim().toLowerCase() : "";
         const normalisedHouse = HOUSES.find(
           (h) => h.toLowerCase() === rawHouse.toLowerCase()
         );
@@ -1163,7 +1353,11 @@ function handleFile(file) {
           errors.push(`Row ${i + 2}: "${rawHouse}" is not a valid house (use: ${HOUSES.join(", ")})`);
           return;
         }
-        parsedImportData.push({ name: rawName, house: normalisedHouse });
+        if (rawEmail && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(rawEmail)) {
+          errors.push(`Row ${i + 2}: "${rawEmail}" is not a valid email`);
+          return;
+        }
+        parsedImportData.push({ name: rawName, house: normalisedHouse, className: rawClass, email: rawEmail });
       });
 
       if (parsedImportData.length === 0) {
@@ -1173,7 +1367,7 @@ function handleFile(file) {
 
       // Show preview
       previewBody.innerHTML = parsedImportData
-        .map((s, i) => `<tr><td>${i + 1}</td><td>${escapeHtml(s.name)}</td><td>${escapeHtml(s.house)}</td></tr>`)
+        .map((s, i) => `<tr><td>${i + 1}</td><td>${escapeHtml(s.name)}</td><td>${escapeHtml(s.house)}</td><td>${s.className ? escapeHtml(s.className) : "—"}</td><td>${s.email ? escapeHtml(s.email) : "—"}</td></tr>`)
         .join("");
       previewCount.textContent = `${parsedImportData.length} student${parsedImportData.length > 1 ? "s" : ""}`;
       uploadPreview.classList.add("visible");
@@ -1206,7 +1400,10 @@ importBtn.addEventListener("click", async () => {
       batch.set(ref, {
         name: student.name,
         house: student.house,
+        className: student.className || "",
+        email: student.email || "",
         merits: 0,
+        uniformPoints: 0,
         createdAt: serverTimestamp()
       });
     }
@@ -1231,11 +1428,28 @@ cancelPreviewBtn.addEventListener("click", () => {
 });
 
 /* ========================================
+   DOWNLOAD EXCEL TEMPLATE
+   ======================================== */
+downloadTemplateBtn.addEventListener("click", () => {
+  const rows = [
+    ["Name", "House", "Class", "Email"],
+    ["Alice Chen", "Green", "7A", "alice.chen@school.edu"],
+    ["Benjamin Park", "Blue", "7B", "benjamin.park@school.edu"]
+  ];
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  ws["!cols"] = [{ wch: 20 }, { wch: 12 }, { wch: 10 }, { wch: 30 }];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Students");
+  XLSX.writeFile(wb, "sisb-honor-students-template.xlsx");
+  showToast("Template downloaded! Fill it in and drop it below.", "info");
+});
+
+/* ========================================
    MANAGE — STUDENT LIST & DELETE
    ======================================== */
 function renderManageStudentList() {
   if (allStudents.length === 0) {
-    manageStudentBody.innerHTML = `<tr><td colspan="4" class="student-table-empty">No students yet. Add some above!</td></tr>`;
+    manageStudentBody.innerHTML = `<tr><td colspan="6" class="student-table-empty">No students yet. Add some above!</td></tr>`;
     manageStudentCount.textContent = "0";
     return;
   }
@@ -1250,7 +1464,17 @@ function renderManageStudentList() {
           ${escapeHtml(s.name)}
         </td>
         <td>${escapeHtml(s.house)}</td>
+        <td>${escapeHtml(s.className || "—")}</td>
         <td>${s.merits || 0}</td>
+        <td>${s.uniformPoints || 0}</td>
+        <td>
+          <span class="student-email-cell">${escapeHtml(s.email || "—")}</span>
+          <button class="btn-icon edit-email-btn" data-student-id="${s.id}" data-student-name="${escapeHtml(s.name)}" data-email="${escapeAttr(s.email || "")}" title="Set email for ${escapeHtml(s.name)}">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+            </svg>
+          </button>
+        </td>
         <td>
           <button class="btn-icon delete-btn" data-student-id="${s.id}" data-student-name="${escapeHtml(s.name)}" title="Delete ${escapeHtml(s.name)}">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -1261,6 +1485,30 @@ function renderManageStudentList() {
       </tr>`
     )
     .join("");
+
+  // Attach email edit handlers
+  document.querySelectorAll(".edit-email-btn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      if (!isAdmin()) { showToast("Only the admin can edit student emails.", "error"); return; }
+      const id = btn.dataset.studentId;
+      const name = btn.dataset.studentName;
+      const current = btn.dataset.email || "";
+      const email = prompt(`Email for ${name}:`, current);
+      if (email === null) return;
+      const trimmed = email.trim().toLowerCase();
+      if (trimmed && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(trimmed)) {
+        showToast("Please enter a valid email address.", "error");
+        return;
+      }
+      try {
+        await updateDoc(doc(db, "students", id), { email: trimmed });
+        showToast(trimmed ? `Email set for ${name}. ✅` : `Email cleared for ${name}.`, "success");
+      } catch (error) {
+        console.error("Error setting email:", error);
+        showToast("Failed to set email. Please try again.", "error");
+      }
+    });
+  });
 
   // Attach delete handlers
   document.querySelectorAll(".delete-btn").forEach((btn) => {

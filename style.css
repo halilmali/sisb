@@ -655,6 +655,36 @@ body {
 }
 
 /* ========================================
+   CLASS FILTER
+   ======================================== */
+.filter-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px;
+  align-items: flex-end;
+  margin-bottom: 14px;
+}
+
+.filter-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.class-filter-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.class-filter-select {
+  width: 200px;
+}
+
+/* ========================================
    FILTER INDICATOR
    ======================================== */
 .filter-indicator {
@@ -693,7 +723,7 @@ body {
    ======================================== */
 .student-grid {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 8px;
   animation: fadeUp 0.4s ease-out;
 }
@@ -778,17 +808,86 @@ body {
   margin-top: 1px;
 }
 
+.student-class-badge {
+  display: inline-block;
+  font-size: 0.55rem;
+  font-weight: 600;
+  padding: 0px 5px;
+  border-radius: 100px;
+  margin-top: 1px;
+  margin-left: 3px;
+  background: var(--color-surface-hover);
+  color: var(--color-text-secondary);
+  border: 1px solid var(--color-border);
+}
+
 .house-badge-green  { background: var(--house-green-light);  color: var(--house-green); }
 .house-badge-blue   { background: var(--house-blue-light);   color: var(--house-blue); }
 .house-badge-yellow { background: var(--house-yellow-light); color: var(--house-yellow); }
 .house-badge-red    { background: var(--house-red-light);    color: var(--house-red); }
 .house-badge-orange { background: var(--house-orange-light); color: var(--house-orange); }
 
-.student-merits {
+.student-points {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+/* ========================================
+   GRID POINT TYPE TABS (Honor / Uniform)
+   ======================================== */
+.grid-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.grid-tab {
+  padding: 7px 16px;
+  border: 1.5px solid var(--color-border);
+  border-radius: 100px;
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  font-family: inherit;
+  font-weight: 600;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+.grid-tab:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.grid-tab.active {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: white;
+}
+
+.point-label {
+  font-size: 0.5rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  min-width: 36px;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.point-label-honor {
+  color: var(--color-primary);
+}
+
+.point-label-uniform {
+  color: var(--house-yellow);
+}
+
+.point-controls {
   display: flex;
   align-items: center;
   gap: 4px;
-  flex-shrink: 0;
 }
 
 .merit-count {
@@ -852,6 +951,26 @@ body {
   transform: scale(0.95);
 }
 
+/* +25 button (admin only) */
+.merit-btn-plus25 {
+  width: 34px;
+  background: var(--house-yellow-light);
+  color: var(--house-yellow);
+  font-size: 0.6rem;
+  font-weight: 800;
+}
+
+.merit-btn-plus25:hover {
+  background: var(--house-yellow);
+  color: white;
+  transform: scale(1.1);
+  box-shadow: 0 4px 12px rgba(245, 158, 11, 0.4);
+}
+
+.merit-btn-plus25:active {
+  transform: scale(0.95);
+}
+
 /* Merit animation */
 .merit-pop {
   animation: meritPop 0.4s ease-out;
@@ -864,8 +983,97 @@ body {
 }
 
 /* ========================================
+   STUDENT VIEW
+   ======================================== */
+.student-content {
+  flex: 1;
+  padding: 40px 24px 32px;
+  max-width: 560px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.student-profile-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: 40px 32px;
+  text-align: center;
+  box-shadow: var(--shadow-sm);
+  animation: fadeUp 0.4s ease-out;
+}
+
+.student-profile-empty {
+  margin-bottom: 14px;
+  font-size: 0.85rem;
+  color: var(--color-text-tertiary);
+}
+
+.student-profile-points {
+  display: flex;
+  gap: 16px;
+  justify-content: center;
+  margin-top: 28px;
+}
+
+.student-profile-point {
+  flex: 1;
+  max-width: 200px;
+  background: var(--color-surface-hover);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 18px 12px;
+}
+
+.student-profile-point .point-label {
+  display: block;
+  text-align: center;
+  min-width: 0;
+  font-size: 0.7rem;
+}
+
+.student-profile-point-value {
+  display: block;
+  font-size: 2.4rem;
+  font-weight: 800;
+  color: var(--color-text);
+  margin-top: 6px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ========================================
    SCOREBOARD PAGE
    ======================================== */
+.scoreboard-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+
+.scoreboard-tab {
+  padding: 8px 18px;
+  border: 1.5px solid var(--color-border);
+  border-radius: 100px;
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  font-family: inherit;
+  font-weight: 600;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+.scoreboard-tab:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.scoreboard-tab.active {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: white;
+}
+
 .scoreboard-content {
   flex: 1;
   padding: 24px 32px 32px;
@@ -1147,6 +1355,13 @@ body {
   padding-right: 36px;
 }
 
+/* --- Upload Toolbar --- */
+.upload-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 10px;
+}
+
 /* --- Upload Area --- */
 .upload-area {
   background: var(--color-surface);
@@ -1287,6 +1502,12 @@ body {
 
 .student-table-wrap {
   overflow-x: auto;
+}
+
+.student-email-cell {
+  font-size: 0.8rem;
+  color: var(--color-text-secondary);
+  margin-right: 4px;
 }
 
 .student-table {
@@ -1434,12 +1655,6 @@ body {
   }
 }
 
-@media (max-width: 900px) {
-  .student-grid {
-    grid-template-columns: repeat(4, 1fr);
-  }
-}
-
 @media (max-width: 768px) {
   .dashboard-header {
     padding: 12px 16px;
@@ -1559,5 +1774,17 @@ body {
     width: 32px;
     height: 32px;
     font-size: 1rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .student-profile-points {
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .student-profile-point {
+    width: 100%;
+    max-width: 260px;
   }
 }
