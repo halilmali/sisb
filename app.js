@@ -1312,25 +1312,34 @@ addStudentSingleBtn.addEventListener("click", async () => {
 
 /* ========================================
    MANAGE — EXCEL / CSV IMPORT
-   ========================================
+   ======================================== */
+
+// Version marker to confirm the browser loaded the fixed file.
+console.log("[sisb] app.js v3 loaded — drop handler active");
 
 // Click upload area to trigger file input
 uploadArea.addEventListener("click", () => fileInput.click());
 
-// Drag-and-drop support
+// Prevent the browser's default drop action (downloading/opening the file)
+// ANYWHERE in the window, and route the dropped file into the import parser.
+window.addEventListener("dragover", (e) => {
+  e.preventDefault();
+});
+window.addEventListener("drop", (e) => {
+  e.preventDefault();
+  uploadArea.classList.remove("drag-over");
+  if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+    handleFile(e.dataTransfer.files[0]);
+  }
+});
+
+// Visual feedback when hovering over the upload area.
 uploadArea.addEventListener("dragover", (e) => {
   e.preventDefault();
   uploadArea.classList.add("drag-over");
 });
 uploadArea.addEventListener("dragleave", () => {
   uploadArea.classList.remove("drag-over");
-});
-uploadArea.addEventListener("drop", (e) => {
-  e.preventDefault();
-  uploadArea.classList.remove("drag-over");
-  if (e.dataTransfer.files.length > 0) {
-    handleFile(e.dataTransfer.files[0]);
-  }
 });
 
 fileInput.addEventListener("change", () => {
@@ -1340,90 +1349,86 @@ fileInput.addEventListener("change", () => {
   }
 });
 
-function handleFile(file) {
+async function handleFile(file) {
   const ext = file.name.split(".").pop().toLowerCase();
   if (!["xlsx", "xls", "csv"].includes(ext)) {
     showToast("Unsupported file format. Please use .xlsx, .xls, or .csv", "error");
     return;
   }
 
-  const reader = new FileReader();
-  reader.onload = (e) => {
-    try {
-      const data = new Uint8Array(e.target.result);
-      const workbook = XLSX.read(data, { type: "array" });
-      const sheet = workbook.Sheets[workbook.SheetNames[0]];
-      const json = XLSX.utils.sheet_to_json(sheet, { defval: "" });
+  try {
+    const data = new Uint8Array(await file.arrayBuffer());
+    const workbook = XLSX.read(data, { type: "array" });
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    const json = XLSX.utils.sheet_to_json(sheet, { defval: "" });
 
-      if (json.length === 0) {
-        showToast("No data found in file.", "error");
+    if (json.length === 0) {
+      showToast("No data found in file.", "error");
+      return;
+    }
+
+    // Normalise column headers (case-insensitive)
+    const headers = Object.keys(json[0]);
+    const nameKey = headers.find((h) => h.toLowerCase().trim() === "name");
+    const houseKey = headers.find((h) => h.toLowerCase().trim() === "house");
+    const classKey = headers.find((h) => h.toLowerCase().trim() === "class");
+    const emailKey = headers.find((h) => h.toLowerCase().trim() === "email");
+
+    if (!nameKey || !houseKey) {
+      showToast("File must have 'Name' and 'House' columns.", "error");
+      return;
+    }
+
+    // Validate and normalise house names
+    const validHouses = HOUSES.map((h) => h.toLowerCase());
+    parsedImportData = [];
+    const errors = [];
+
+    json.forEach((row, i) => {
+      const rawName = String(row[nameKey]).trim();
+      const rawHouse = String(row[houseKey]).trim();
+      const rawClass = classKey ? String(row[classKey]).trim() : "";
+      const rawEmail = emailKey ? String(row[emailKey]).trim().toLowerCase() : "";
+      const normalisedHouse = HOUSES.find(
+        (h) => h.toLowerCase() === rawHouse.toLowerCase()
+      );
+
+      if (!rawName) {
+        errors.push(`Row ${i + 2}: missing name`);
         return;
       }
-
-      // Normalise column headers (case-insensitive)
-      const headers = Object.keys(json[0]);
-      const nameKey = headers.find((h) => h.toLowerCase().trim() === "name");
-      const houseKey = headers.find((h) => h.toLowerCase().trim() === "house");
-      const classKey = headers.find((h) => h.toLowerCase().trim() === "class");
-      const emailKey = headers.find((h) => h.toLowerCase().trim() === "email");
-
-      if (!nameKey || !houseKey) {
-        showToast("File must have 'Name' and 'House' columns.", "error");
+      if (!normalisedHouse) {
+        errors.push(`Row ${i + 2}: "${rawHouse}" is not a valid house (use: ${HOUSES.join(", ")})`);
         return;
       }
-
-      // Validate and normalise house names
-      const validHouses = HOUSES.map((h) => h.toLowerCase());
-      parsedImportData = [];
-      const errors = [];
-
-      json.forEach((row, i) => {
-        const rawName = String(row[nameKey]).trim();
-        const rawHouse = String(row[houseKey]).trim();
-        const rawClass = classKey ? String(row[classKey]).trim() : "";
-        const rawEmail = emailKey ? String(row[emailKey]).trim().toLowerCase() : "";
-        const normalisedHouse = HOUSES.find(
-          (h) => h.toLowerCase() === rawHouse.toLowerCase()
-        );
-
-        if (!rawName) {
-          errors.push(`Row ${i + 2}: missing name`);
-          return;
-        }
-        if (!normalisedHouse) {
-          errors.push(`Row ${i + 2}: "${rawHouse}" is not a valid house (use: ${HOUSES.join(", ")})`);
-          return;
-        }
-        if (rawEmail && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(rawEmail)) {
-          errors.push(`Row ${i + 2}: "${rawEmail}" is not a valid email`);
-          return;
-        }
-        parsedImportData.push({ name: rawName, house: normalisedHouse, className: rawClass, email: rawEmail });
-      });
-
-      if (parsedImportData.length === 0) {
-        showToast("No valid rows found to import.", "error");
+      if (rawEmail && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(rawEmail)) {
+        errors.push(`Row ${i + 2}: "${rawEmail}" is not a valid email`);
         return;
       }
+      parsedImportData.push({ name: rawName, house: normalisedHouse, className: rawClass, email: rawEmail });
+    });
 
-      // Show preview
-      previewBody.innerHTML = parsedImportData
-        .map((s, i) => `<tr><td>${i + 1}</td><td>${escapeHtml(s.name)}</td><td>${escapeHtml(s.house)}</td><td>${s.className ? escapeHtml(s.className) : "—"}</td><td>${s.email ? escapeHtml(s.email) : "—"}</td></tr>`)
-        .join("");
-      previewCount.textContent = `${parsedImportData.length} student${parsedImportData.length > 1 ? "s" : ""}`;
-      uploadPreview.classList.add("visible");
+    if (parsedImportData.length === 0) {
+      showToast("No valid rows found to import.", "error");
+      return;
+    }
 
-      if (errors.length > 0) {
-        showToast(`${parsedImportData.length} valid rows. ${errors.length} skipped (check console).`, "info");
-        console.warn("Import errors:", errors);
-      }
+    // Show preview
+    previewBody.innerHTML = parsedImportData
+      .map((s, i) => `<tr><td>${i + 1}</td><td>${escapeHtml(s.name)}</td><td>${escapeHtml(s.house)}</td><td>${s.className ? escapeHtml(s.className) : "—"}</td><td>${s.email ? escapeHtml(s.email) : "—"}</td></tr>`)
+      .join("");
+    previewCount.textContent = `${parsedImportData.length} student${parsedImportData.length > 1 ? "s" : ""}`;
+    uploadPreview.classList.add("visible");
 
-    } catch (error) {
+    if (errors.length > 0) {
+      showToast(`${parsedImportData.length} valid rows. ${errors.length} skipped (check console).`, "info");
+      console.warn("Import errors:", errors);
+    }
+
+  } catch (error) {
       console.error("Error parsing file:", error);
       showToast("Failed to parse file. Make sure it's a valid Excel/CSV file.", "error");
     }
-  };
-  reader.readAsArrayBuffer(file);
 }
 
 /* Import button */
