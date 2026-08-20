@@ -1,5 +1,5 @@
 /* ========================================
-   SISB Honor — Merit System
+   SISB Behaviour Point — Merit System
    Firebase v9+ Modular SDK
    ======================================== */
 
@@ -13,6 +13,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
 import {
   getFirestore,
+  initializeFirestore,
   collection,
   doc,
   getDoc,
@@ -28,7 +29,9 @@ import {
   orderBy,
   limit,
   serverTimestamp,
-  writeBatch
+  writeBatch,
+  persistentLocalCache,
+  persistentMultipleTabManager
 } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
 /* ========================================
@@ -49,7 +52,19 @@ const firebaseConfig = {
    ======================================== */
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
-const db = getFirestore(app);
+let db;
+try {
+  // Persistent IndexedDB cache: reads satisfied from the local cache are
+  // free, so page reloads / reconnects stop re-billing the full dataset.
+  db = initializeFirestore(app, {
+    localCache: persistentLocalCache({
+      tabManager: persistentMultipleTabManager()
+    })
+  });
+} catch (persistError) {
+  console.warn("Persistent cache unavailable, falling back to default:", persistError);
+  db = getFirestore(app);
+}
 const provider = new GoogleAuthProvider();
 
 /* ========================================
@@ -62,13 +77,31 @@ const HOUSES = ["Green", "Blue", "Yellow", "Red", "Orange"];
    ======================================== */
 let adminEmails = [];
 
-async function fetchAdminConfig() {
+const ADMIN_CACHE_KEY = "sisb_admin_config_cache";
+const ADMIN_CACHE_TTL = 30 * 60 * 1000; // 30 minutes
+
+async function fetchAdminConfig(force = false) {
   try {
+    // Serve the admin list from sessionStorage when fresh — this config
+    // rarely changes and skipping the read on every login saves a read.
+    if (!force) {
+      try {
+        const cached = JSON.parse(sessionStorage.getItem(ADMIN_CACHE_KEY) || "null");
+        if (cached && Date.now() - cached.fetchedAt < ADMIN_CACHE_TTL) {
+          adminEmails = cached.emails || [];
+          return;
+        }
+      } catch (e) { /* ignore unreadable/malformed cache */ }
+    }
+
     const adminRef = doc(db, "config", "admin");
     const adminSnap = await getDoc(adminRef);
     if (adminSnap.exists()) {
       adminEmails = adminSnap.data().emails || [];
     }
+    try {
+      sessionStorage.setItem(ADMIN_CACHE_KEY, JSON.stringify({ emails: adminEmails, fetchedAt: Date.now() }));
+    } catch (e) { /* ignore storage quota errors */ }
   } catch (error) {
     console.error("Error fetching admin config:", error);
   }
@@ -212,18 +245,22 @@ onAuthStateChanged(auth, async (user) => {
   console.log("Auth state changed:", user ? user.email : "null");
   if (user) {
     currentUser = user;
-    await fetchAdminConfig();
-    const isTeacher = await checkIfAllowed(user.email);
-    if (isTeacher) {
-      showDashboardView();
-      setupRealTimeListener();
+    // Check the student role first (the majority of users) so they pay one
+    // read; teachers pay one read for the empty student lookup plus one for
+    // the allowedUsers doc. Previously every login paid 2–3 reads.
+    const student = await findStudentByEmail(user.email);
+    if (student) {
+      currentStudent = student;
+      showStudentView();
+      setupStudentListener();
     } else {
-      const student = await findStudentByEmail(user.email);
-      if (student) {
-        currentStudent = student;
-        showStudentView();
-        setupStudentListener();
+      const isTeacher = await checkIfAllowed(user.email);
+      if (isTeacher) {
+        await fetchAdminConfig();
+        showDashboardView();
+        setupRealTimeListener();
       } else {
+        await fetchAdminConfig();
         showAccessDenied();
       }
     }
@@ -661,7 +698,7 @@ function renderStudents(students) {
     return;
   }
 
-  const pointLabel = pointType === "uniform" ? "uniform" : "honor";
+  const pointLabel = pointType === "uniform" ? "uniform" : "behaviour";
 
   studentGrid.innerHTML = filtered
     .map((student) => {
@@ -838,7 +875,7 @@ function updateStats(students) {
   const field = pointType === "uniform" ? "uniformPoints" : "merits";
   const totalPoints = students.reduce((s, st) => s + (st[field] || 0), 0);
   totalMeritsEl.textContent = totalPoints;
-  totalPointsLabel.textContent = pointType === "uniform" ? "Total Uniform" : "Total Honors";
+  totalPointsLabel.textContent = pointType === "uniform" ? "Total Uniform" : "Total Behaviour Points";
 
   const houseTotals = {};
   for (const s of students) {
@@ -857,7 +894,7 @@ function updateStats(students) {
 function renderScoreboard() {
   const students = allStudents;
   const field = scoreboardType === "uniform" ? "uniformPoints" : "merits";
-  const label = scoreboardType === "uniform" ? "Uniform" : "Honors";
+  const label = scoreboardType === "uniform" ? "Uniform" : "Behaviour Points";
 
   // Highlight the active tab
   document.querySelectorAll(".scoreboard-tab").forEach((t) => {
@@ -948,7 +985,7 @@ async function handlePointClick(e) {
   const isMinus = btn.classList.contains("merit-btn-minus");
   const isPlus25 = btn.classList.contains("merit-btn-plus25");
   const change = isMinus ? -1 : (isPlus25 ? 25 : 1);
-  const label = type === "uniform" ? "uniform point" : "honor point";
+  const label = type === "uniform" ? "uniform point" : "behaviour point";
   const pluralLabel = Math.abs(change) === 1 ? label : label + "s";
 
   // Minus buttons can't go below zero
@@ -966,8 +1003,11 @@ async function handlePointClick(e) {
     const update = type === "uniform"
       ? { uniformPoints: increment(change) }
       : { merits: increment(change) };
-    await updateDoc(doc(db, "students", studentId), update);
-    await addDoc(collection(db, "meritLog"), {
+    // One atomic batch = fewer round-trips and guarantees the log entry is
+    // written only when the points update succeeds.
+    const batch = writeBatch(db);
+    batch.update(doc(db, "students", studentId), update);
+    batch.set(collection(db, "meritLog").doc(), {
       studentId,
       studentName,
       house,
@@ -976,6 +1016,7 @@ async function handlePointClick(e) {
       timestamp: serverTimestamp(),
       change
     });
+    await batch.commit();
 
     const countEl = document.getElementById(`${type}-${studentId}`);
     if (countEl) {
@@ -1078,7 +1119,7 @@ document.getElementById("resetMeritsBtn")?.addEventListener("click", async () =>
   if (!isAdmin()) return;
   const count = allStudents.length;
   if (count === 0) { showToast("No students to reset.", "error"); return; }
-  if (!confirm(`Reset ALL honor and uniform points for ${count} student${count !== 1 ? "s" : ""} to 0? This cannot be undone.`)) return;
+  if (!confirm(`Reset ALL behaviour and uniform points for ${count} student${count !== 1 ? "s" : ""} to 0? This cannot be undone.`)) return;
 
   const btn = document.getElementById("resetMeritsBtn");
   btn.disabled = true;
@@ -1136,7 +1177,7 @@ function setupLogListener() {
   if (unsubscribeLog) unsubscribeLog();
 
   const logRef = collection(db, "meritLog");
-  const q = query(logRef, orderBy("timestamp", "desc"), limit(100));
+  const q = query(logRef, orderBy("timestamp", "desc"), limit(25));
 
   unsubscribeLog = onSnapshot(
     q,
@@ -1182,7 +1223,7 @@ function renderLogList(entries) {
       <tr>
         <td>${escapeHtml(e.studentName || "—")}</td>
         <td>${e.house ? `<span class="house-dot house-dot-${e.house.toLowerCase()}"></span>${escapeHtml(e.house)}` : "—"}</td>
-        <td>${e.type === "uniform" ? "Uniform" : "Honor"}${typeof e.change === "number" ? ` ${e.change > 0 ? "+" : ""}${e.change}` : ""}</td>
+        <td>${e.type === "uniform" ? "Uniform" : "Behaviour Point"}${typeof e.change === "number" ? ` ${e.change > 0 ? "+" : ""}${e.change}` : ""}</td>
         <td>${escapeHtml(e.teacherEmail || "—")}</td>
         <td style="white-space:nowrap;color:var(--color-text-tertiary);font-size:0.8rem;">${formatTime(e.timestamp)}</td>
       </tr>`
@@ -1440,7 +1481,7 @@ downloadTemplateBtn.addEventListener("click", () => {
   ws["!cols"] = [{ wch: 20 }, { wch: 12 }, { wch: 10 }, { wch: 30 }];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Students");
-  XLSX.writeFile(wb, "sisb-honor-students-template.xlsx");
+  XLSX.writeFile(wb, "sisb-behaviour-point-students-template.xlsx");
   showToast("Template downloaded! Fill it in and drop it below.", "info");
 });
 
