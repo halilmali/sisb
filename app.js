@@ -1007,7 +1007,7 @@ async function handlePointClick(e) {
     // written only when the points update succeeds.
     const batch = writeBatch(db);
     batch.update(doc(db, "students", studentId), update);
-    batch.set(collection(db, "meritLog").doc(), {
+    batch.set(doc(collection(db, "meritLog")), {
       studentId,
       studentName,
       house,
