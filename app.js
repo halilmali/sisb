@@ -73,6 +73,18 @@ const provider = new GoogleAuthProvider();
 const HOUSES = ["Green", "Blue", "Yellow", "Red", "Orange"];
 
 /* ========================================
+   UNIFORM AWARD WINDOW (school-wide schedule)
+   ----------------------------------------
+   Uniform points can only be awarded during this window. Defined in
+   Bangkok local time (UTC+7, no DST). Keep in sync with firestore.rules
+   (isUniformAwardWindow) — this is the single source of truth.
+   ======================================== */
+const BANGKOK_UTC_OFFSET_MIN = 7 * 60;            // Bangkok is UTC+7
+const UNIFORM_WINDOW_WEEKDAYS = [1, 2, 3, 4, 5]; // getDay(): 1=Mon .. 5=Fri
+const UNIFORM_WINDOW_START_MIN = 7 * 60;          // 07:00 Bangkok
+const UNIFORM_WINDOW_END_MIN = 7 * 60 + 30;       // 07:30 Bangkok (exclusive)
+
+/* ========================================
    ADMIN — stored in Firestore config/admin document
    ======================================== */
 let adminEmails = [];
@@ -109,6 +121,16 @@ async function fetchAdminConfig(force = false) {
 
 function isAdmin() {
   return currentUser && adminEmails.includes(currentUser.email);
+}
+
+// LH (house leader) users and admins may award the +25 bonus.
+function canGive25Points() {
+  return isAdmin() || currentUserRole === "LH";
+}
+
+function roleLabel(role) {
+  if (role === "LH") return "House Leader";
+  return "Teacher";
 }
 
 const HOUSE_EMOJIS = {
@@ -165,8 +187,10 @@ const teachersView         = $("#teachersView");
 const teachersToggleBtn    = $("#teachersToggleBtn");
 const backFromTeachersBtn  = $("#backFromTeachersBtn");
 const teacherEmailInput    = $("#teacherEmailInput");
+const teacherRoleSelect    = $("#teacherRoleSelect");
 const addTeacherBtn        = $("#addTeacherBtn");
 const teacherBulkInput     = $("#teacherBulkInput");
+const teacherBulkRoleSelect = $("#teacherBulkRoleSelect");
 const addTeachersBulkBtn   = $("#addTeachersBulkBtn");
 const teacherTableBody     = $("#teacherTableBody");
 const teacherCount         = $("#teacherCount");
@@ -212,6 +236,7 @@ const downloadTemplateBtn   = $("#downloadTemplateBtn");
    ======================================== */
 let currentUser = null;
 let currentStudent = null;
+let currentUserRole = null; // role stored on the logged-in user's allowedUsers doc
 let unsubscribeStudents = null;
 let unsubscribeStudent = null;
 let unsubscribeTeachers = null;
@@ -267,6 +292,7 @@ onAuthStateChanged(auth, async (user) => {
   } else {
     currentUser = null;
     currentStudent = null;
+    currentUserRole = null;
     showLogin();
     if (unsubscribeStudents) {
       unsubscribeStudents();
@@ -403,7 +429,11 @@ async function checkIfAllowed(email) {
     // Document ID is the teacher's email (lowercased)
     const userRef = doc(db, "allowedUsers", email.toLowerCase());
     const userSnap = await getDoc(userRef);
-    return userSnap.exists();
+    if (userSnap.exists()) {
+      currentUserRole = userSnap.data().role || null;
+      return true;
+    }
+    return false;
   } catch (error) {
     console.error("Error checking allowed users:", error);
     return false;
@@ -717,7 +747,7 @@ function renderStudents(students) {
               ${isAdmin() ? `<button class="merit-btn merit-btn-minus" data-type="${pointType}" data-student-id="${student.id}" data-student-name="${escapeHtml(student.name)}" data-house="${student.house}" title="Remove ${pointLabel} point from ${escapeHtml(student.name)}">−</button>` : ''}
               <span class="merit-count" id="${pointType}-${student.id}">${pointType === "uniform" ? (student.uniformPoints || 0) : (student.merits || 0)}</span>
               <button class="merit-btn merit-btn-plus" data-type="${pointType}" data-student-id="${student.id}" data-student-name="${escapeHtml(student.name)}" data-house="${student.house}" title="Give ${pointLabel} point to ${escapeHtml(student.name)}">+</button>
-              ${isAdmin() ? `<button class="merit-btn merit-btn-plus25" data-type="${pointType}" data-student-id="${student.id}" data-student-name="${escapeHtml(student.name)}" data-house="${student.house}" title="Give 25 ${pointLabel} points (admin only)">+25</button>` : ''}
+              ${canGive25Points() ? `<button class="merit-btn merit-btn-plus25" data-type="${pointType}" data-student-id="${student.id}" data-student-name="${escapeHtml(student.name)}" data-house="${student.house}" title="Give 25 ${pointLabel} points (admin / house leader only)">+25</button>` : ''}
             </div>
           </div>
         </div>`;
@@ -738,8 +768,61 @@ function renderStudents(students) {
 /* ========================================
    GRID POINT TYPE TABS — Honor / Uniform
    ======================================== */
+// Uniform points may only be awarded during the window defined by the
+// UNIFORM_WINDOW_* constants above (in Bangkok local time).
+function bkkClock() {
+  // Shift the epoch to Bangkok wall-clock, then read the shifted UTC parts.
+  const shifted = new Date(Date.now() + BANGKOK_UTC_OFFSET_MIN * 60000);
+  return {
+    day: shifted.getUTCDay(),                                   // 0=Sun .. 6=Sat
+    minutes: shifted.getUTCHours() * 60 + shifted.getUTCMinutes() // 0..1439
+  };
+}
+
+function isUniformWindow() {
+  const { day, minutes } = bkkClock();
+  return UNIFORM_WINDOW_WEEKDAYS.includes(day)
+      && minutes >= UNIFORM_WINDOW_START_MIN
+      && minutes <  UNIFORM_WINDOW_END_MIN;
+}
+
+// Enable/disable the Uniform tab, and drop back to the Behaviour view if the
+// window closes while the user is on the Uniform tab.
+function applyUniformTabAvailability() {
+  const available = isUniformWindow();
+  document.querySelectorAll(".grid-tab").forEach((tab) => {
+    const isUniformTab = tab.dataset.pointType === "uniform";
+    if (!isUniformTab) return;
+    tab.disabled = !available;
+    tab.title = available
+      ? "Uniform points"
+      : "Uniform points are available Mon–Fri 07:00–07:30 (Bangkok time)";
+  });
+
+  // If the window just closed while we were on the Uniform tab, revert.
+  if (!available && pointType === "uniform") {
+    pointType = "honor";
+    document.querySelectorAll(".grid-tab").forEach((t) => {
+      t.classList.toggle("active", t.dataset.pointType === "honor");
+    });
+    renderStudents(allStudents);
+    updateStats(allStudents);
+  }
+}
+
+// Re-check at page load and regularly so the button flips at 07:00 / 07:30
+// without needing a refresh.
+document.addEventListener("DOMContentLoaded", () => {
+  applyUniformTabAvailability();
+  setInterval(applyUniformTabAvailability, 30 * 1000); // every 30s
+});
+
 document.querySelectorAll(".grid-tab").forEach((tab) => {
   tab.addEventListener("click", () => {
+    if (tab.dataset.pointType === "uniform" && !isUniformWindow()) {
+      showToast("Uniform points are only available Mon–Fri 07:00–07:30 (Bangkok time).", "error");
+      return;
+    }
     pointType = tab.dataset.pointType === "uniform" ? "uniform" : "honor";
     document.querySelectorAll(".grid-tab").forEach((t) => {
       t.classList.toggle("active", t.dataset.pointType === pointType);
@@ -988,6 +1071,12 @@ async function handlePointClick(e) {
   const label = type === "uniform" ? "uniform point" : "behaviour point";
   const pluralLabel = Math.abs(change) === 1 ? label : label + "s";
 
+  // +25 is restricted to admins and house leaders (LH).
+  if (isPlus25 && !canGive25Points()) {
+    showToast("Only admins or house leaders can give 25 points.", "error");
+    return;
+  }
+
   // Minus buttons can't go below zero
   if (isMinus) {
     const student = allStudents.find(s => s.id === studentId);
@@ -1045,7 +1134,10 @@ function setupTeachersListener() {
     teachersRef,
     (snapshot) => {
       const teachers = [];
-      snapshot.forEach((d) => teachers.push({ id: d.id, email: d.data().email || "—" }));
+      snapshot.forEach((d) => {
+        const data = d.data() || {};
+        teachers.push({ id: d.id, email: data.email || "—", role: data.role || "" });
+      });
       renderTeacherList(teachers);
     },
     (error) => {
@@ -1057,7 +1149,7 @@ function setupTeachersListener() {
   teacherCount.textContent = teachers.length;
 
   if (teachers.length === 0) {
-    teacherTableBody.innerHTML = `<tr><td colspan="2" class="student-table-empty">No teachers added yet.</td></tr>`;
+    teacherTableBody.innerHTML = `<tr><td colspan="3" class="student-table-empty">No teachers added yet.</td></tr>`;
     return;
   }
 
@@ -1066,6 +1158,7 @@ function setupTeachersListener() {
       (t) => `
       <tr>
         <td>${escapeHtml(t.email)}</td>
+        <td>${escapeHtml(roleLabel(t.role))}</td>
         <td style="width:60px;">
           <button class="btn-icon delete-teacher-btn" data-teacher-email="${escapeHtml(t.id)}" title="Remove ${escapeHtml(t.email)}">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -1148,6 +1241,7 @@ document.getElementById("resetMeritsBtn")?.addEventListener("click", async () =>
 addTeacherBtn.addEventListener("click", async () => {
   if (!isAdmin()) { showToast("Only the admin can add teachers.", "error"); return; }
   const email = teacherEmailInput.value.trim().toLowerCase();
+  const role = teacherRoleSelect.value || "";
 
   if (!email) { showToast("Please enter the teacher's email.", "error"); return; }
   if (!email.includes("@")) { showToast("Please enter a valid email address.", "error"); return; }
@@ -1158,7 +1252,7 @@ addTeacherBtn.addEventListener("click", async () => {
   try {
     // Use email as the document ID
     const ref = doc(db, "allowedUsers", email);
-    await setDoc(ref, { email });
+    await setDoc(ref, role ? { email, role } : { email });
     showToast(`Added ${email} as an authorized teacher! ✅`, "success");
     teacherEmailInput.value = "";
   } catch (error) {
@@ -1245,6 +1339,8 @@ addTeachersBulkBtn.addEventListener("click", async () => {
 
   if (emails.length === 0) { showToast("Please enter at least one valid email.", "error"); return; }
 
+  const bulkRole = teacherBulkRoleSelect.value || "";
+
   addTeachersBulkBtn.disabled = true;
   addTeachersBulkBtn.textContent = `Adding ${emails.length}...`;
 
@@ -1252,7 +1348,7 @@ addTeachersBulkBtn.addEventListener("click", async () => {
     const batch = writeBatch(db);
     for (const email of emails) {
       const ref = doc(db, "allowedUsers", email);
-      batch.set(ref, { email });
+      batch.set(ref, bulkRole ? { email, role: bulkRole } : { email });
     }
     await batch.commit();
     showToast(`Added ${emails.length} teacher${emails.length > 1 ? "s" : ""}! ✅`, "success");

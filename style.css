@@ -866,6 +866,18 @@ body {
   color: white;
 }
 
+.grid-tab:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  border-color: var(--color-border);
+  color: var(--color-text-tertiary);
+}
+
+.grid-tab:disabled:hover {
+  border-color: var(--color-border);
+  color: var(--color-text-tertiary);
+}
+
 .point-label {
   font-size: 0.5rem;
   font-weight: 700;

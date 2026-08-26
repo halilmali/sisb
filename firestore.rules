@@ -1,0 +1,150 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    /* ============ Helper functions ============ */
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isSignedIn()
+        && request.auth.token.email in get(/databases/$(database)/documents/config/admin).data.emails;
+    }
+
+    // Doc keyed by the lowercase email of the signed-in user.
+    function allowedRef() {
+      return /databases/$(database)/documents/allowedUsers/$(request.auth.token.email);
+    }
+
+    function isAllowedUser() {
+      return isSignedIn() && exists(allowedRef());
+    }
+
+    function role() {
+      return get(allowedRef()).data.role;
+    }
+
+    // A non-admin point award may only ever touch the merits / uniformPoints
+    // fields — no renaming, house/class edits, email swaps, or field deletions.
+    function isOnlyPointChanged() {
+      return request.resource.data.diff(resource.data)
+        .affectedKeys()
+        .hasOnly(["merits", "uniformPoints"]);
+    }
+
+    function awardDelta(field) {
+      return request.resource.data[field] - resource.data[field];
+    }
+
+    // Is this update a *granting* of uniform points (net increase)?
+    function isUniformAwardChange() {
+      return awardDelta("uniformPoints") > 0;
+    }
+
+    // Uniform points may only be awarded during the window. This MUST stay in
+    // sync with the UNIFORM_WINDOW_* constants / bkkClock() in app.js (the rules
+    // language can't import the JS file). We compute the Bangkok wall-clock the
+    // same way: request.time is UTC; add +7h and read Bangkok day/minute.
+    function isUniformAwardWindow() {
+      let d = request.time.date();
+      let utcMin = d.getUTCHours() * 60 + d.getUTCMinutes();
+      let bkkTotalMin = utcMin + 420;      // Bangkok = UTC + 7h
+      let wd = (bkkTotalMin >= 1440 ? d.getUTCDay() + 1 : d.getUTCDay()) % 7; // 1..5 = Mon..Fri
+      let bkkMin = bkkTotalMin % 1440;      // Bangkok minute-of-day
+      return wd >= 1
+          && wd <= 5
+          && bkkMin >= 420     // 07:00 Bangkok
+          && bkkMin < 450;     // 07:30 Bangkok (exclusive)
+    }
+
+    // A uniform-point award is allowed only within the window; all other
+    // updates (behaviour points, admin resets to zero) are unaffected.
+    function isUniformAwardAllowed() {
+      return !isUniformAwardChange() || isUniformAwardWindow();
+    }
+
+    // Regular teachers may award a single point (+1) on one of the two axes.
+    function isTeacherAward() {
+      return isOnlyPointChanged() && (
+        (awardDelta("merits") == 1 && awardDelta("uniformPoints") == 0)
+        || (awardDelta("uniformPoints") == 1 && awardDelta("merits") == 0)
+      );
+    }
+
+    // House leaders (LH) may award between 1 and 25 points on one axis.
+    function isLHUpTo25Award() {
+      return isOnlyPointChanged() && (
+        (awardDelta("merits") >= 1 && awardDelta("merits") <= 25 && awardDelta("uniformPoints") == 0)
+        || (awardDelta("uniformPoints") >= 1 && awardDelta("uniformPoints") <= 25 && awardDelta("merits") == 0)
+      );
+    }
+
+    // The administering user must be granted the award being applied — and
+    // uniform-point awards are additionally restricted to the weekday window.
+    function isAwardAuthorized() {
+      return isUniformAwardAllowed() && (
+            isAdmin()
+         || (isAllowedUser() && role() == "LH" && isLHUpTo25Award())
+         || (isAllowedUser() && isTeacherAward())
+      );
+    }
+
+    // The log "change" recorded must match the caller's awarding rights.
+    function isTeacherLog() {
+      return request.resource.data.change == 1;
+    }
+
+    function isLHLog() {
+      return request.resource.data.change >= 1
+          && request.resource.data.change <= 25;
+    }
+
+    // A uniform-point log entry (positive change) is only allowed inside the
+    // awarding window; non-uniform entries and resets-to-zero are unaffected.
+    function isUniformLogAllowed() {
+      return request.resource.data.type != "uniform"
+          || request.resource.data.change <= 0
+          || isUniformAwardWindow();
+    }
+
+    function isLogAuthorized() {
+      return isUniformLogAllowed() && (
+            isAdmin()
+         || (isAllowedUser() && role() == "LH" && isLHLog())
+         || (isAllowedUser() && isTeacherLog())
+      );
+    }
+
+    /* ============ Rules ============ */
+
+    // Admin list
+    match /config/admin {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // Authorized teachers — self-read for the current user, admin manage only
+    match /allowedUsers/{email} {
+      allow read: if isSignedIn() && (isAdmin() || email == request.auth.token.email);
+      allow create, update, delete: if isAdmin();
+    }
+
+    // Students — everyone signed in may view; only admins create/delete;
+    // point awards are granted by admin, teacher (+1), or house leader (up to 25).
+    match /students/{studentId} {
+      allow read: if isSignedIn();
+      allow create: if isAdmin();
+      allow delete: if isAdmin();
+      allow update: if isAwardAuthorized();
+    }
+
+    // Point log — the awarding user logs their own entry; only admins edit/delete.
+    match /meritLog/{logId} {
+      allow read: if isSignedIn();
+      allow create: if isLogAuthorized();
+      allow update, delete: if isAdmin();
+    }
+  }
+}

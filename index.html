@@ -338,12 +338,26 @@
               <label for="teacherEmailInput">Email</label>
               <input type="email" id="teacherEmailInput" class="form-input" placeholder="teacher@school.edu" autocomplete="off">
             </div>
+            <div class="form-group">
+              <label for="teacherRoleSelect">Role</label>
+              <select id="teacherRoleSelect" class="form-select">
+                <option value="">Teacher</option>
+                <option value="LH">House Leader (LH)</option>
+              </select>
+            </div>
             <button id="addTeacherBtn" class="btn btn-primary">Add Teacher</button>
           </div>
           <div class="form-row form-row-bulk">
             <div class="form-group form-group-textarea">
-              <label for="teacherBulkInput">Bulk Add <span class="bulk-hint">— one email per line</span></label>
+              <label for="teacherBulkInput">Bulk Add <span class="bulk-hint">— one email per line; use the Role select below for all of them</span></label>
               <textarea id="teacherBulkInput" class="form-textarea" placeholder="teacher1@school.edu&#10;teacher2@school.edu&#10;teacher3@school.edu" rows="4" spellcheck="false"></textarea>
+            </div>
+            <div class="form-group">
+              <label for="teacherBulkRoleSelect">Role</label>
+              <select id="teacherBulkRoleSelect" class="form-select">
+                <option value="">Teacher</option>
+                <option value="LH">House Leader (LH)</option>
+              </select>
             </div>
             <button id="addTeachersBulkBtn" class="btn btn-primary">Add Teachers</button>
           </div>
@@ -360,6 +374,7 @@
               <thead>
                 <tr>
                   <th>Email</th>
+                  <th>Role</th>
                   <th style="width:60px;"></th>
                 </tr>
               </thead>
