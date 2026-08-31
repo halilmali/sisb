@@ -8,9 +8,13 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    // Admin list is optional — a missing config/admin doc just means "no admin".
     function isAdmin() {
+      let ref = /databases/$(database)/documents/config/admin;
       return isSignedIn()
-        && request.auth.token.email in get(/databases/$(database)/documents/config/admin).data.emails;
+        && exists(ref)
+        && 'emails' in get(ref).data
+        && request.auth.token.email in get(ref).data.emails;
     }
 
     // Doc keyed by the lowercase email of the signed-in user.
@@ -22,8 +26,12 @@ service cloud.firestore {
       return isSignedIn() && exists(allowedRef());
     }
 
+    // Teachers added before the role feature (or via bulk import without a
+    // role) have NO "role" field. Accessing it directly would raise a rule
+    // evaluation error and silently deny every write, so treat it as "".
     function role() {
-      return get(allowedRef()).data.role;
+      let docData = get(allowedRef()).data;
+      return 'role' in docData && docData.role is string ? docData.role : "";
     }
 
     // A non-admin point award may only ever touch the merits / uniformPoints
@@ -34,8 +42,17 @@ service cloud.firestore {
         .hasOnly(["merits", "uniformPoints"]);
     }
 
+    // Defensive numeric read: students created before the uniform-points
+    // feature exist may not carry a merits / uniformPoints field. Because the
+    // rules language raises an error when a map key is missing, treat a missing
+    // (or non-numeric) field as 0 instead of letting every award be denied.
+    function fieldNum(docData, field) {
+      return field in docData && docData[field] is number
+        ? docData[field] : 0;
+    }
+
     function awardDelta(field) {
-      return request.resource.data[field] - resource.data[field];
+      return fieldNum(request.resource.data, field) - fieldNum(resource.data, field);
     }
 
     // Is this update a *granting* of uniform points (net increase)?
@@ -45,14 +62,19 @@ service cloud.firestore {
 
     // Uniform points may only be awarded during the window. This MUST stay in
     // sync with the UNIFORM_WINDOW_* constants / bkkClock() in app.js (the rules
-    // language can't import the JS file). We compute the Bangkok wall-clock the
-    // same way: request.time is UTC; add +7h and read Bangkok day/minute.
+    // language can't import the JS file). request.time.toMillis() is the UTC
+    // epoch; add +7h (Bangkok) and derive wall-clock minute + weekday with pure
+    // integer arithmetic — the rules Date type exposes NO getUTCDay/getUTCHours
+    // style getters, so calendar access is done via epoch modulo math. The epoch
+    // (1970-01-01) was a Thursday, hence the +4 offset below (0=Sun..6=Sat).
     function isUniformAwardWindow() {
-      let d = request.time.date();
-      let utcMin = d.getUTCHours() * 60 + d.getUTCMinutes();
-      let bkkTotalMin = utcMin + 420;      // Bangkok = UTC + 7h
-      let wd = (bkkTotalMin >= 1440 ? d.getUTCDay() + 1 : d.getUTCDay()) % 7; // 1..5 = Mon..Fri
-      let bkkMin = bkkTotalMin % 1440;      // Bangkok minute-of-day
+      let ms = request.time.toMillis();
+      let mins = (ms - ms % 60000) / 60000;      // whole UTC minutes since epoch
+      let bkkTotalMin = mins + 420;              // Bangkok = UTC + 7h
+      let bkkMin = bkkTotalMin % 1440;           // Bangkok minute-of-day
+      let rem = bkkTotalMin % 10080;             // 1440*7 -> weekday residue
+      let daysComp = (rem - rem % 1440) / 1440;  // 0..6 (1970-01-01 == Thursday)
+      let wd = (4 + daysComp) % 7;               // 1..5 = Mon..Fri
       return wd >= 1
           && wd <= 5
           && bkkMin >= 420     // 07:00 Bangkok
@@ -92,20 +114,23 @@ service cloud.firestore {
     }
 
     // The log "change" recorded must match the caller's awarding rights.
+    // Read the field defensively so a malformed log never errors out the rule.
     function isTeacherLog() {
-      return request.resource.data.change == 1;
+      return fieldNum(request.resource.data, "change") == 1;
     }
 
     function isLHLog() {
-      return request.resource.data.change >= 1
-          && request.resource.data.change <= 25;
+      let chg = fieldNum(request.resource.data, "change");
+      return chg >= 1
+          && chg <= 25;
     }
 
     // A uniform-point log entry (positive change) is only allowed inside the
     // awarding window; non-uniform entries and resets-to-zero are unaffected.
     function isUniformLogAllowed() {
-      return request.resource.data.type != "uniform"
-          || request.resource.data.change <= 0
+      let logType = 'type' in request.resource.data ? request.resource.data.type : "";
+      return logType != "uniform"
+          || fieldNum(request.resource.data, "change") <= 0
           || isUniformAwardWindow();
     }
 
