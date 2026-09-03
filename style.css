@@ -39,9 +39,9 @@
   --house-blue: #2563eb;
   --house-blue-bg: #eff6ff;
   --house-blue-light: #dbeafe;
-  --house-yellow: #d97706;
-  --house-yellow-bg: #fffbeb;
-  --house-yellow-light: #fef3c7;
+  --house-yellow: #ca8a04;
+  --house-yellow-bg: #fefce8;
+  --house-yellow-light: #fef9c3;
   --house-red: #dc2626;
   --house-red-bg: #fef2f2;
   --house-red-light: #fee2e2;
@@ -567,7 +567,7 @@ body {
 /* House-specific active backgrounds */
 .sidebar-house-item.active.active-green  { background: var(--house-green-bg);  border-color: var(--house-green);  box-shadow: 0 0 0 2px rgba(22, 163, 74, 0.15); }
 .sidebar-house-item.active.active-blue   { background: var(--house-blue-bg);   border-color: var(--house-blue);   box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15); }
-.sidebar-house-item.active.active-yellow { background: var(--house-yellow-bg); border-color: var(--house-yellow); box-shadow: 0 0 0 2px rgba(217, 119, 6, 0.15);  }
+.sidebar-house-item.active.active-yellow { background: var(--house-yellow-bg); border-color: var(--house-yellow); box-shadow: 0 0 0 2px rgba(202, 138, 4, 0.15);  }
 .sidebar-house-item.active.active-red    { background: var(--house-red-bg);    border-color: var(--house-red);    box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.15);  }
 .sidebar-house-item.active.active-orange { background: var(--house-orange-bg); border-color: var(--house-orange); box-shadow: 0 0 0 2px rgba(234, 88, 12, 0.15); }
 
@@ -781,7 +781,7 @@ body {
 
 .student-avatar-green  { background: linear-gradient(135deg, #16a34a, #22c55e); }
 .student-avatar-blue   { background: linear-gradient(135deg, #2563eb, #3b82f6); }
-.student-avatar-yellow { background: linear-gradient(135deg, #d9ff06, #f59e0b); }
+.student-avatar-yellow { background: linear-gradient(135deg, #ca8a04, #facc15); }
 .student-avatar-red    { background: linear-gradient(135deg, #dc2626, #ef4444); }
 .student-avatar-orange { background: linear-gradient(135deg, #ea580c, #f97316); }
 
@@ -976,7 +976,7 @@ body {
   background: var(--house-yellow);
   color: white;
   transform: scale(1.1);
-  box-shadow: 0 4px 12px rgba(245, 158, 11, 0.4);
+  box-shadow: 0 4px 12px rgba(202, 138, 4, 0.4);
 }
 
 .merit-btn-plus25:active {
@@ -1149,7 +1149,7 @@ body {
   color: var(--color-text-secondary);
 }
 
-.scoreboard-rank-1 { background: #fef3c7; color: #d97706; }
+.scoreboard-rank-1 { background: #fef9c3; color: #ca8a04; }
 .scoreboard-rank-2 { background: #f1f5f9; color: #64748b; }
 .scoreboard-rank-3 { background: #fff7ed; color: #ea580c; }
 
@@ -1215,7 +1215,7 @@ body {
 
 .scoreboard-bar-fill-green  { background: linear-gradient(90deg, #16a34a, #22c55e); }
 .scoreboard-bar-fill-blue   { background: linear-gradient(90deg, #2563eb, #3b82f6); }
-.scoreboard-bar-fill-yellow { background: linear-gradient(90deg, #d97706, #f59e0b); }
+.scoreboard-bar-fill-yellow { background: linear-gradient(90deg, #ca8a04, #eab308); }
 .scoreboard-bar-fill-red    { background: linear-gradient(90deg, #dc2626, #ef4444); }
 .scoreboard-bar-fill-orange { background: linear-gradient(90deg, #ea580c, #f97316); }
 
@@ -1676,7 +1676,9 @@ body {
 
   .header-right {
     width: 100%;
-    justify-content: space-between;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    gap: 6px;
   }
 
   .user-email {
@@ -1746,25 +1748,70 @@ body {
   .scoreboard-merit-number {
     font-size: 1.5rem;
   }
+
+  /* Filter toolbar — let the selects use the available width */
+  .filter-toolbar {
+    gap: 10px;
+  }
+
+  .filter-control {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .class-filter-select {
+    width: 100%;
+  }
+
+  /* Section headers wrap instead of overflowing */
+  .manage-header,
+  .student-list-header,
+  .preview-header {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .preview-actions {
+    flex-wrap: wrap;
+  }
+
+  .upload-area {
+    padding: 28px 16px;
+  }
+
+  .grid-tabs,
+  .scoreboard-tabs {
+    flex-wrap: wrap;
+  }
+
+  .student-table-wrap {
+    -webkit-overflow-scrolling: touch;
+  }
 }
 
 @media (max-width: 600px) {
   .student-grid {
     grid-template-columns: repeat(2, 1fr);
-  }
-}
-
-@media (max-width: 380px) {
-  .stats-bar {
-    grid-template-columns: 1fr;
-  }
-
-  .student-grid {
-    grid-template-columns: 1fr;
+    gap: 6px;
   }
 
   .student-card {
-    padding: 6px 8px;
+    padding: 6px 7px;
+    gap: 6px;
+  }
+
+  .student-avatar {
+    width: 24px;
+    height: 24px;
+    font-size: 0.6rem;
+  }
+
+  .student-name {
+    font-size: 0.72rem;
+  }
+
+  .point-controls {
+    gap: 3px;
   }
 
   .merit-btn {
@@ -1773,19 +1820,33 @@ body {
     font-size: 0.85rem;
   }
 
+  .merit-btn-plus25 {
+    width: 30px;
+    font-size: 0.55rem;
+  }
+
   .merit-count {
-    min-width: 16px;
+    min-width: 15px;
     font-size: 0.78rem;
   }
 
-  .scoreboard-emoji {
-    font-size: 1.4rem;
+  /* Compact header actions so they fit on a phone */
+  .dashboard-header .btn {
+    padding: 8px 10px;
+    font-size: 0.78rem;
+    gap: 5px;
   }
 
-  .scoreboard-rank {
-    width: 32px;
-    height: 32px;
-    font-size: 1rem;
+  .stat-value {
+    font-size: 1.2rem;
+  }
+
+  .scoreboard-name {
+    font-size: 1.05rem;
+  }
+
+  .scoreboard-stats {
+    gap: 12px;
   }
 }
 
@@ -1798,5 +1859,75 @@ body {
   .student-profile-point {
     width: 100%;
     max-width: 260px;
+  }
+
+  /* Single-column list: roomier cards, comfortable touch targets */
+  .student-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .student-card {
+    padding: 8px 10px;
+    gap: 8px;
+  }
+
+  .student-avatar {
+    width: 28px;
+    height: 28px;
+    font-size: 0.7rem;
+  }
+
+  .student-name {
+    font-size: 0.8rem;
+  }
+
+  .point-controls {
+    gap: 4px;
+  }
+
+  .merit-btn {
+    width: 28px;
+    height: 28px;
+    font-size: 0.95rem;
+  }
+
+  .merit-btn-plus25 {
+    width: 36px;
+    font-size: 0.6rem;
+  }
+
+  .merit-count {
+    min-width: 18px;
+    font-size: 0.85rem;
+  }
+
+  /* Hide the long email on small phones — the avatar is enough */
+  .user-email {
+    display: none;
+  }
+
+  .stats-bar {
+    grid-template-columns: 1fr;
+  }
+
+  .scoreboard-emoji {
+    font-size: 1.4rem;
+  }
+
+  .scoreboard-rank {
+    width: 32px;
+    height: 32px;
+    font-size: 1rem;
+  }
+
+  /* Toasts span the width of small screens */
+  .toast-container {
+    top: 12px;
+    left: 12px;
+    right: 12px;
+  }
+
+  .toast {
+    max-width: 100%;
   }
 }

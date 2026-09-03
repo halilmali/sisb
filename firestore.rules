@@ -67,6 +67,7 @@ service cloud.firestore {
     // integer arithmetic — the rules Date type exposes NO getUTCDay/getUTCHours
     // style getters, so calendar access is done via epoch modulo math. The epoch
     // (1970-01-01) was a Thursday, hence the +4 offset below (0=Sun..6=Sat).
+    // Award days are Mon(1), Tue(2), Wed(3) and Fri(5) — Thursday(4) excluded.
     function isUniformAwardWindow() {
       let ms = request.time.toMillis();
       let mins = (ms - ms % 60000) / 60000;      // whole UTC minutes since epoch
@@ -75,8 +76,7 @@ service cloud.firestore {
       let rem = bkkTotalMin % 10080;             // 1440*7 -> weekday residue
       let daysComp = (rem - rem % 1440) / 1440;  // 0..6 (1970-01-01 == Thursday)
       let wd = (4 + daysComp) % 7;               // 1..5 = Mon..Fri
-      return wd >= 1
-          && wd <= 5
+      return (wd == 1 || wd == 2 || wd == 3 || wd == 5) // Mon/Tue/Wed/Fri only
           && bkkMin >= 420     // 07:00 Bangkok
           && bkkMin < 450;     // 07:30 Bangkok (exclusive)
     }

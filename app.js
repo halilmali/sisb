@@ -80,7 +80,8 @@ const HOUSES = ["Green", "Blue", "Yellow", "Red", "Orange"];
    (isUniformAwardWindow) — this is the single source of truth.
    ======================================== */
 const BANGKOK_UTC_OFFSET_MIN = 7 * 60;            // Bangkok is UTC+7
-const UNIFORM_WINDOW_WEEKDAYS = [1, 2, 3, 4, 5]; // getDay(): 1=Mon .. 5=Fri
+// getDay(): 1=Mon, 2=Tue, 3=Wed, 5=Fri — Thursday (4) is NOT an award day.
+const UNIFORM_WINDOW_WEEKDAYS = [1, 2, 3, 5];
 const UNIFORM_WINDOW_START_MIN = 7 * 60;          // 07:00 Bangkok
 const UNIFORM_WINDOW_END_MIN = 7 * 60 + 30;       // 07:30 Bangkok (exclusive)
 
@@ -786,6 +787,43 @@ function isUniformWindow() {
       && minutes <  UNIFORM_WINDOW_END_MIN;
 }
 
+// Epoch-ms of midnight (00:00) today in Bangkok wall-clock time. Used to scope
+// the once-a-day uniform check to the current Bangkok calendar day.
+function bkkDayStart() {
+  const shifted = new Date(Date.now() + BANGKOK_UTC_OFFSET_MIN * 60000);
+  return Date.UTC(
+    shifted.getUTCFullYear(),
+    shifted.getUTCMonth(),
+    shifted.getUTCDate()
+  ) - BANGKOK_UTC_OFFSET_MIN * 60000;
+}
+
+// True when the student has already received a uniform point today (Bangkok
+// time). Reads today's meritLog entries for the student — a single equality
+// filter plus one range filter on timestamp, so no composite index is needed;
+// the type / change filtering happens client-side on the small result set.
+async function hasUniformPointToday(studentId) {
+  try {
+    const q = query(
+      collection(db, "meritLog"),
+      where("studentId", "==", studentId),
+      where("timestamp", ">=", new Date(bkkDayStart())),
+      limit(30)
+    );
+    const snap = await getDocs(q);
+    let found = false;
+    snap.forEach((d) => {
+      const entry = d.data() || {};
+      if (entry.type === "uniform" && (entry.change || 0) > 0) found = true;
+    });
+    return found;
+  } catch (err) {
+    // Fail open: an index/network hiccup must never block awarding points.
+    console.warn("Uniform once-a-day check failed, allowing award:", err);
+    return false;
+  }
+}
+
 // Enable/disable the Uniform tab, and drop back to the Behaviour view if the
 // window closes while the user is on the Uniform tab.
 function applyUniformTabAvailability() {
@@ -795,8 +833,8 @@ function applyUniformTabAvailability() {
     if (!isUniformTab) return;
     tab.disabled = !available;
     tab.title = available
-      ? "Uniform points"
-      : "Uniform points are available Mon–Fri 07:00–07:30 (Bangkok time)";
+      ? "Uniform points — max 1 per student per day"
+      : "Uniform points are available Mon, Tue, Wed & Fri 07:00–07:30 (Bangkok time)";
   });
 
   // If the window just closed while we were on the Uniform tab, revert.
@@ -820,7 +858,7 @@ document.addEventListener("DOMContentLoaded", () => {
 document.querySelectorAll(".grid-tab").forEach((tab) => {
   tab.addEventListener("click", () => {
     if (tab.dataset.pointType === "uniform" && !isUniformWindow()) {
-      showToast("Uniform points are only available Mon–Fri 07:00–07:30 (Bangkok time).", "error");
+      showToast("Uniform points are only available Mon, Tue, Wed & Fri 07:00–07:30 (Bangkok time).", "error");
       return;
     }
     pointType = tab.dataset.pointType === "uniform" ? "uniform" : "honor";
@@ -1074,6 +1112,13 @@ async function handlePointClick(e) {
   // +25 is restricted to admins and house leaders (LH).
   if (isPlus25 && !canGive25Points()) {
     showToast("Only admins or house leaders can give 25 points.", "error");
+    return;
+  }
+
+  // A student may receive at most ONE uniform point per day (Bangkok time).
+  // Removals and admin resets are unaffected.
+  if (type === "uniform" && change > 0 && (await hasUniformPointToday(studentId))) {
+    showToast(`${studentName} has already received a uniform point today.`, "error");
     return;
   }
 
