@@ -1807,7 +1807,12 @@ body {
   }
 
   .student-name {
-    font-size: 0.72rem;
+    font-size: 0.8rem;
+    /* Let the full name wrap instead of being cut off with "…" */
+    white-space: normal;
+    overflow: visible;
+    word-break: break-word;
+    line-height: 1.25;
   }
 
   .point-controls {
@@ -1878,7 +1883,7 @@ body {
   }
 
   .student-name {
-    font-size: 0.8rem;
+    font-size: 0.875rem;
   }
 
   .point-controls {
