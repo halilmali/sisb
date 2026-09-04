@@ -34,12 +34,13 @@ service cloud.firestore {
       return 'role' in docData && docData.role is string ? docData.role : "";
     }
 
-    // A non-admin point award may only ever touch the merits / uniformPoints
-    // fields — no renaming, house/class edits, email swaps, or field deletions.
+    // A non-admin point award may only ever touch the merits / uniformPoints /
+    // uniformDay fields — no renaming, house/class edits, email swaps, or field
+    // deletions. uniformDay is the once-a-day uniform marker (see below).
     function isOnlyPointChanged() {
       return request.resource.data.diff(resource.data)
         .affectedKeys()
-        .hasOnly(["merits", "uniformPoints"]);
+        .hasOnly(["merits", "uniformPoints", "uniformDay"]);
     }
 
     // Defensive numeric read: students created before the uniform-points
@@ -81,10 +82,36 @@ service cloud.firestore {
           && bkkMin < 450;     // 07:30 Bangkok (exclusive)
     }
 
-    // A uniform-point award is allowed only within the window; all other
-    // updates (behaviour points, admin resets to zero) are unaffected.
+    // Read the once-a-day marker defensively: a missing / non-integer field
+    // yields -1, which can never equal today's day number.
+    function uniformDayOf(docData) {
+      return 'uniformDay' in docData && docData.uniformDay is int
+        ? docData.uniformDay : -1;
+    }
+
+    // Bangkok calendar day number (whole days since the Unix epoch, UTC+7).
+    // Must stay in sync with bkkDayNumber() in app.js. request.time.toMillis()
+    // is UTC epoch ms; shifting +7h and truncating to whole days yields the
+    // Bangkok day, so the comparison stays correct across the 00:00 boundary.
+    function todayBkkDay() {
+      let ms = request.time.toMillis() + 25200000;  // +7h => Bangkok time
+      return (ms - ms % 86400000) / 86400000;
+    }
+
+    // Granting uniform points is allowed only when ALL of the following hold:
+    //   1. the awarding window is open, AND
+    //   2. the student has NOT already received a uniform award today
+    //      (resource.data.uniformDay != today), AND
+    //   3. the write stamps uniformDay with today's Bangkok day number.
+    // The stamp makes "max 1 uniform award per student per day" enforceable at
+    // the server: a second award attempt the same day violates condition 2 even
+    // if two clients race. All other updates (behaviour points, uniform
+    // removals, admin resets to zero) are unaffected.
     function isUniformAwardAllowed() {
-      return !isUniformAwardChange() || isUniformAwardWindow();
+      if (!isUniformAwardChange()) return true;
+      return isUniformAwardWindow()
+          && uniformDayOf(resource.data) != todayBkkDay()
+          && uniformDayOf(request.resource.data) == todayBkkDay();
     }
 
     // Regular teachers may award a single point (+1) on one of the two axes.

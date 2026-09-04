@@ -23,6 +23,7 @@ import {
   updateDoc,
   deleteDoc,
   increment,
+  runTransaction,
   query,
   where,
   onSnapshot,
@@ -787,41 +788,13 @@ function isUniformWindow() {
       && minutes <  UNIFORM_WINDOW_END_MIN;
 }
 
-// Epoch-ms of midnight (00:00) today in Bangkok wall-clock time. Used to scope
-// the once-a-day uniform check to the current Bangkok calendar day.
-function bkkDayStart() {
-  const shifted = new Date(Date.now() + BANGKOK_UTC_OFFSET_MIN * 60000);
-  return Date.UTC(
-    shifted.getUTCFullYear(),
-    shifted.getUTCMonth(),
-    shifted.getUTCDate()
-  ) - BANGKOK_UTC_OFFSET_MIN * 60000;
-}
-
-// True when the student has already received a uniform point today (Bangkok
-// time). Reads today's meritLog entries for the student — a single equality
-// filter plus one range filter on timestamp, so no composite index is needed;
-// the type / change filtering happens client-side on the small result set.
-async function hasUniformPointToday(studentId) {
-  try {
-    const q = query(
-      collection(db, "meritLog"),
-      where("studentId", "==", studentId),
-      where("timestamp", ">=", new Date(bkkDayStart())),
-      limit(30)
-    );
-    const snap = await getDocs(q);
-    let found = false;
-    snap.forEach((d) => {
-      const entry = d.data() || {};
-      if (entry.type === "uniform" && (entry.change || 0) > 0) found = true;
-    });
-    return found;
-  } catch (err) {
-    // Fail open: an index/network hiccup must never block awarding points.
-    console.warn("Uniform once-a-day check failed, allowing award:", err);
-    return false;
-  }
+// Bangkok calendar day number (whole days since the Unix epoch in UTC+7). This
+// is stamped onto the student doc (uniformDay) every time a uniform award is
+// granted, so both the client and the security rules can cheaply tell whether
+// the student has already received a uniform award today. Must stay in sync
+// with todayBkkDay() in firestore.rules.
+function bkkDayNumber() {
+  return Math.floor((Date.now() + BANGKOK_UTC_OFFSET_MIN * 60000) / 86400000);
 }
 
 // Enable/disable the Uniform tab, and drop back to the Behaviour view if the
@@ -1108,6 +1081,7 @@ async function handlePointClick(e) {
   const change = isMinus ? -1 : (isPlus25 ? 25 : 1);
   const label = type === "uniform" ? "uniform point" : "behaviour point";
   const pluralLabel = Math.abs(change) === 1 ? label : label + "s";
+  const isUniformGrant = type === "uniform" && change > 0;
 
   // +25 is restricted to admins and house leaders (LH).
   if (isPlus25 && !canGive25Points()) {
@@ -1115,11 +1089,17 @@ async function handlePointClick(e) {
     return;
   }
 
-  // A student may receive at most ONE uniform point per day (Bangkok time).
-  // Removals and admin resets are unaffected.
-  if (type === "uniform" && change > 0 && (await hasUniformPointToday(studentId))) {
-    showToast(`${studentName} has already received a uniform point today.`, "error");
-    return;
+  // A student may receive at most ONE uniform award per day (Bangkok time).
+  // The check against the live snapshot gives instant feedback; the real guard
+  // is the transaction below plus the uniformDay rule in firestore.rules, so
+  // neither a double click nor two teachers awarding at once can both get
+  // through.
+  if (isUniformGrant) {
+    const cached = allStudents.find((s) => s.id === studentId);
+    if (cached && cached.uniformDay === bkkDayNumber()) {
+      showToast(`${studentName} has already received a uniform point today.`, "error");
+      return;
+    }
   }
 
   // Minus buttons can't go below zero
@@ -1134,23 +1114,27 @@ async function handlePointClick(e) {
 
   btn.disabled = true;
   try {
-    const update = type === "uniform"
-      ? { uniformPoints: increment(change) }
-      : { merits: increment(change) };
-    // One atomic batch = fewer round-trips and guarantees the log entry is
-    // written only when the points update succeeds.
-    const batch = writeBatch(db);
-    batch.update(doc(db, "students", studentId), update);
-    batch.set(doc(collection(db, "meritLog")), {
-      studentId,
-      studentName,
-      house,
-      type,
-      teacherEmail: currentUser.email,
-      timestamp: serverTimestamp(),
-      change
-    });
-    await batch.commit();
+    if (isUniformGrant) {
+      await awardUniformPoint(studentId, change, studentName, house);
+    } else {
+      const update = type === "uniform"
+        ? { uniformPoints: increment(change) }
+        : { merits: increment(change) };
+      // One atomic batch = fewer round-trips and guarantees the log entry is
+      // written only when the points update succeeds.
+      const batch = writeBatch(db);
+      batch.update(doc(db, "students", studentId), update);
+      batch.set(doc(collection(db, "meritLog")), {
+        studentId,
+        studentName,
+        house,
+        type,
+        teacherEmail: currentUser.email,
+        timestamp: serverTimestamp(),
+        change
+      });
+      await batch.commit();
+    }
 
     const countEl = document.getElementById(`${type}-${studentId}`);
     if (countEl) {
@@ -1161,10 +1145,45 @@ async function handlePointClick(e) {
     showToast(change > 0 ? `+${change} ${pluralLabel} for ${studentName}! 🎉` : `-${Math.abs(change)} ${pluralLabel} for ${studentName}`, change > 0 ? "success" : "info");
     setTimeout(() => { btn.disabled = false; }, 400);
   } catch (error) {
-    console.error("Error updating points:", error);
-    showToast("Failed to update points. Please try again.", "error");
+    // The server rejected the award because the student already received one
+    // today — e.g. a race with a second click or another teacher.
+    if (error && error.message === "UNIFORM_ALREADY_AWARDED") {
+      showToast(`${studentName} has already received a uniform point today.`, "error");
+    } else {
+      console.error("Error updating points:", error);
+      showToast("Failed to update points. Please try again.", "error");
+    }
     btn.disabled = false;
   }
+}
+
+// Grant uniform points once-per-day, atomically. The student-doc read and the
+// increment + uniformDay stamp run inside a single transaction, so two rapid
+// clicks or two teachers awarding at the same time cannot both pass the daily
+// check. firestore.rules enforces the same invariant server-side.
+async function awardUniformPoint(studentId, change, studentName, house) {
+  const studentRef = doc(db, "students", studentId);
+  await runTransaction(db, async (tx) => {
+    const snap = await tx.get(studentRef);
+    const data = snap.data() || {};
+    if (data.uniformDay === bkkDayNumber()) {
+      // Abort with a sentinel error the caller maps back to a friendly toast.
+      throw new Error("UNIFORM_ALREADY_AWARDED");
+    }
+    tx.update(studentRef, {
+      uniformPoints: increment(change),
+      uniformDay: bkkDayNumber()
+    });
+    tx.set(doc(collection(db, "meritLog")), {
+      studentId,
+      studentName,
+      house,
+      type: "uniform",
+      teacherEmail: currentUser.email,
+      timestamp: serverTimestamp(),
+      change
+    });
+  });
 }
 
 /* ========================================
