@@ -108,10 +108,12 @@ service cloud.firestore {
     // if two clients race. All other updates (behaviour points, uniform
     // removals, admin resets to zero) are unaffected.
     function isUniformAwardAllowed() {
-      if (!isUniformAwardChange()) return true;
-      return isUniformAwardWindow()
-          && uniformDayOf(resource.data) != todayBkkDay()
-          && uniformDayOf(request.resource.data) == todayBkkDay();
+      // Non-granting updates are always allowed; only *granting* uniform points
+      // must satisfy the window check plus the once-per-day marker transition.
+      return !isUniformAwardChange()
+          || (isUniformAwardWindow()
+              && uniformDayOf(resource.data) != todayBkkDay()
+              && uniformDayOf(request.resource.data) == todayBkkDay());
     }
 
     // Regular teachers may award a single point (+1) on one of the two axes.
