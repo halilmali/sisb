@@ -1570,6 +1570,13 @@ body {
 .house-dot-red    { background: var(--house-red); }
 .house-dot-orange { background: var(--house-orange); }
 
+/* Inline house picker in the Manage Students table */
+.house-select {
+  min-width: 110px;
+  padding: 4px 8px;
+  font-size: 0.82rem;
+}
+
 .student-table-empty {
   text-align: center;
   padding: 40px 20px;

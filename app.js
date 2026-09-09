@@ -1667,7 +1667,7 @@ downloadTemplateBtn.addEventListener("click", () => {
    ======================================== */
 function renderManageStudentList() {
   if (allStudents.length === 0) {
-    manageStudentBody.innerHTML = `<tr><td colspan="6" class="student-table-empty">No students yet. Add some above!</td></tr>`;
+    manageStudentBody.innerHTML = `<tr><td colspan="7" class="student-table-empty">No students yet. Add some above!</td></tr>`;
     manageStudentCount.textContent = "0";
     return;
   }
@@ -1681,7 +1681,16 @@ function renderManageStudentList() {
           <span class="house-dot house-dot-${s.house.toLowerCase()}"></span>
           ${escapeHtml(s.name)}
         </td>
-        <td>${escapeHtml(s.house)}</td>
+        <td>
+          <select class="form-select house-select" data-student-id="${s.id}" data-student-name="${escapeAttr(s.name)}" title="Change house for ${escapeAttr(s.name)}">
+            ${Object.keys(HOUSE_EMOJIS)
+              .map(
+                (h) =>
+                  `<option value="${h}" class="opt-${h.toLowerCase()}" ${h === s.house ? "selected" : ""}>${HOUSE_EMOJIS[h]} ${h}</option>`
+              )
+              .join("")}
+          </select>
+        </td>
         <td>${escapeHtml(s.className || "—")}</td>
         <td>${s.merits || 0}</td>
         <td>${s.uniformPoints || 0}</td>
@@ -1703,6 +1712,27 @@ function renderManageStudentList() {
       </tr>`
     )
     .join("");
+
+  // Attach house change handlers (admins may reassign a student's house)
+  document.querySelectorAll(".house-select").forEach((sel) => {
+    sel.addEventListener("change", async () => {
+      if (!isAdmin()) { showToast("Only the admin can change a student's house.", "error"); renderManageStudentList(); return; }
+      const id = sel.dataset.studentId;
+      const name = sel.dataset.studentName;
+      const student = allStudents.find((s) => s.id === id);
+      const previous = student ? student.house : sel.options[0]?.value;
+      const house = sel.value;
+      if (!house || house === previous) return;
+      try {
+        await updateDoc(doc(db, "students", id), { house });
+        showToast(`${name} moved to ${HOUSE_EMOJIS[house]} ${house}. ✅`, "success");
+      } catch (error) {
+        console.error("Error setting house:", error);
+        showToast("Failed to change house. Please try again.", "error");
+        sel.value = previous || "";
+      }
+    });
+  });
 
   // Attach email edit handlers
   document.querySelectorAll(".edit-email-btn").forEach((btn) => {
