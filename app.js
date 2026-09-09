@@ -285,6 +285,9 @@ onAuthStateChanged(auth, async (user) => {
       if (isTeacher) {
         await fetchAdminConfig();
         showDashboardView();
+        // The admin list just loaded — refresh the Uniform tab immediately so
+        // admins can use it right away instead of waiting for the 30s tick.
+        applyUniformTabAvailability();
         setupRealTimeListener();
       } else {
         await fetchAdminConfig();
@@ -798,20 +801,24 @@ function bkkDayNumber() {
 }
 
 // Enable/disable the Uniform tab, and drop back to the Behaviour view if the
-// window closes while the user is on the Uniform tab.
+// window closes while the user is on the Uniform tab. Admins may award uniform
+// points at any time, so their tab is always enabled.
 function applyUniformTabAvailability() {
-  const available = isUniformWindow();
+  const available = isUniformWindow() || isAdmin();
   document.querySelectorAll(".grid-tab").forEach((tab) => {
     const isUniformTab = tab.dataset.pointType === "uniform";
     if (!isUniformTab) return;
     tab.disabled = !available;
     tab.title = available
-      ? "Uniform points — max 1 per student per day"
+      ? (isAdmin()
+          ? "Uniform points — admins may award any time"
+          : "Uniform points — max 1 per student per day")
       : "Uniform points are available Mon, Tue, Wed & Fri 07:00–07:30 (Bangkok time)";
   });
 
   // If the window just closed while we were on the Uniform tab, revert.
-  if (!available && pointType === "uniform") {
+  // (Admins keep the tab; their availability never lapses.)
+  if (!available && !isAdmin() && pointType === "uniform") {
     pointType = "honor";
     document.querySelectorAll(".grid-tab").forEach((t) => {
       t.classList.toggle("active", t.dataset.pointType === "honor");
@@ -830,7 +837,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
 document.querySelectorAll(".grid-tab").forEach((tab) => {
   tab.addEventListener("click", () => {
-    if (tab.dataset.pointType === "uniform" && !isUniformWindow()) {
+    if (tab.dataset.pointType === "uniform" && !isUniformWindow() && !isAdmin()) {
       showToast("Uniform points are only available Mon, Tue, Wed & Fri 07:00–07:30 (Bangkok time).", "error");
       return;
     }
@@ -1093,8 +1100,10 @@ async function handlePointClick(e) {
   // The check against the live snapshot gives instant feedback; the real guard
   // is the transaction below plus the uniformDay rule in firestore.rules, so
   // neither a double click nor two teachers awarding at once can both get
-  // through.
-  if (isUniformGrant) {
+  // through. Admins are exempt — they may grant uniform points any time,
+  // repeatedly (the transaction still stamps uniformDay so a teacher's
+  // once-a-day limit keeps counting the admin's award).
+  if (isUniformGrant && !isAdmin()) {
     const cached = allStudents.find((s) => s.id === studentId);
     if (cached && cached.uniformDay === bkkDayNumber()) {
       showToast(`${studentName} has already received a uniform point today.`, "error");
@@ -1157,16 +1166,19 @@ async function handlePointClick(e) {
   }
 }
 
-// Grant uniform points once-per-day, atomically. The student-doc read and the
-// increment + uniformDay stamp run inside a single transaction, so two rapid
-// clicks or two teachers awarding at the same time cannot both pass the daily
-// check. firestore.rules enforces the same invariant server-side.
+// Grant uniform points atomically. The student-doc read and the increment +
+// uniformDay stamp run inside a single transaction, so two rapid clicks or two
+// teachers awarding at the same time cannot both pass the daily check.
+// firestore.rules enforces the same invariant server-side. Admins skip the
+// daily check (they may award any time) but still stamp uniformDay, so the
+// once-per-day limit for teachers keeps counting the admin's award.
 async function awardUniformPoint(studentId, change, studentName, house) {
   const studentRef = doc(db, "students", studentId);
+  const adminBypass = isAdmin();
   await runTransaction(db, async (tx) => {
     const snap = await tx.get(studentRef);
     const data = snap.data() || {};
-    if (data.uniformDay === bkkDayNumber()) {
+    if (!adminBypass && data.uniformDay === bkkDayNumber()) {
       // Abort with a sentinel error the caller maps back to a friendly toast.
       throw new Error("UNIFORM_ALREADY_AWARDED");
     }

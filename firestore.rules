@@ -99,18 +99,21 @@ service cloud.firestore {
     }
 
     // Granting uniform points is allowed only when ALL of the following hold:
-    //   1. the awarding window is open, AND
-    //   2. the student has NOT already received a uniform award today
+    //   1. the caller is an admin (admins may award any time, unlimited), OR
+    //   2. the awarding window is open, AND
+    //   3. the student has NOT already received a uniform award today
     //      (resource.data.uniformDay != today), AND
-    //   3. the write stamps uniformDay with today's Bangkok day number.
+    //   4. the write stamps uniformDay with today's Bangkok day number.
     // The stamp makes "max 1 uniform award per student per day" enforceable at
-    // the server: a second award attempt the same day violates condition 2 even
+    // the server: a second award attempt the same day violates condition 3 even
     // if two clients race. All other updates (behaviour points, uniform
-    // removals, admin resets to zero) are unaffected.
+    // removals, admin resets to zero) are unaffected. Admins bypass conditions
+    // 2-4 entirely — they may grant uniform points at any moment, repeatedly.
     function isUniformAwardAllowed() {
       // Non-granting updates are always allowed; only *granting* uniform points
       // must satisfy the window check plus the once-per-day marker transition.
-      return !isUniformAwardChange()
+      return isAdmin()
+          || !isUniformAwardChange()
           || (isUniformAwardWindow()
               && uniformDayOf(resource.data) != todayBkkDay()
               && uniformDayOf(request.resource.data) == todayBkkDay());
@@ -155,10 +158,12 @@ service cloud.firestore {
     }
 
     // A uniform-point log entry (positive change) is only allowed inside the
-    // awarding window; non-uniform entries and resets-to-zero are unaffected.
+    // awarding window — except for admins, who may award any time. Non-uniform
+    // entries and resets-to-zero are unaffected.
     function isUniformLogAllowed() {
       let logType = 'type' in request.resource.data ? request.resource.data.type : "";
-      return logType != "uniform"
+      return isAdmin()
+          || logType != "uniform"
           || fieldNum(request.resource.data, "change") <= 0
           || isUniformAwardWindow();
     }
