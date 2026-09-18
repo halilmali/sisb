@@ -558,9 +558,18 @@
         <div class="modal-header">
           <div>
             <h3 id="topStudentsTitle">🏆 Top 5 Students</h3>
-            <p class="modal-subtitle">Highest behaviour and uniform points (all time)</p>
+            <p id="topStudentsSubtitle" class="modal-subtitle">Highest behaviour and uniform points</p>
           </div>
           <button id="topStudentsCloseBtn" class="btn-icon" title="Close">✕</button>
+        </div>
+        <div class="scope-toggle">
+          <button id="topStudentsWeekScopeBtn" class="scope-btn active" title="Rank by points received in one school week">Last school week</button>
+          <button id="topStudentsAllScopeBtn" class="scope-btn" title="Rank by all-time point totals">All time</button>
+        </div>
+        <div id="topStudentsWeekNav" class="week-nav">
+          <button id="topStudentsPrevBtn" class="btn btn-outline btn-small" title="Previous school week">◀ Prev week</button>
+          <span id="topStudentsWeekLabel" class="week-label"></span>
+          <button id="topStudentsNextBtn" class="btn btn-outline btn-small" title="Next school week">Next week ▶</button>
         </div>
         <div class="top-columns">
           <div class="top-column">
@@ -585,7 +594,11 @@
           </div>
           <button id="topTeachersCloseBtn" class="btn-icon" title="Close">✕</button>
         </div>
-        <div class="week-nav">
+        <div class="scope-toggle">
+          <button id="topTeachersWeekScopeBtn" class="scope-btn active" title="Rank by points awarded in one school week">Last school week</button>
+          <button id="topTeachersAllScopeBtn" class="scope-btn" title="Rank by points awarded of all time">All time</button>
+        </div>
+        <div id="topTeachersWeekNav" class="week-nav">
           <button id="topTeachersPrevBtn" class="btn btn-outline btn-small" title="Previous school week">◀ Prev week</button>
           <span id="topTeachersWeekLabel" class="week-label"></span>
           <button id="topTeachersNextBtn" class="btn btn-outline btn-small" title="Next school week">Next week ▶</button>
@@ -631,6 +644,6 @@
   </div>
 
   <!-- ============ APP ============ -->
-  <script type="module" src="app.js?v=8"></script>
+  <script type="module" src="app.js?v=10"></script>
 </body>
 </html>

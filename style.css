@@ -1931,6 +1931,37 @@ body {
   text-align: center;
 }
 
+/* Scope toggle (week vs all-time) */
+.scope-toggle {
+  display: flex;
+  gap: 8px;
+  padding: 12px 22px 0;
+}
+
+.scope-btn {
+  padding: 7px 16px;
+  border: 1.5px solid var(--color-border);
+  border-radius: 100px;
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  font-family: inherit;
+  font-weight: 600;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+.scope-btn:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.scope-btn.active {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: white;
+}
+
 @media (max-width: 600px) {
   .top-columns {
     grid-template-columns: 1fr;
