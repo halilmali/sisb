@@ -314,6 +314,7 @@ const adminAwardBar   = $("#adminAwardBar");
 const awardAsSelect   = $("#awardAsSelect");
 
 /* Log filters (admin) */
+const logStudentFilter = $("#logStudentFilter");
 const logTeacherFilter = $("#logTeacherFilter");
 const logTypeFilter    = $("#logTypeFilter");
 const logDateFilter    = $("#logDateFilter");
@@ -321,6 +322,16 @@ const logDateInput     = $("#logDateInput");
 const logLoadMoreWrap  = $("#logLoadMoreWrap");
 const logLoadMoreBtn   = $("#logLoadMoreBtn");
 const logShowingStatus = $("#logShowingStatus");
+
+/* Student history modal */
+const studentHistoryModal     = $("#studentHistoryModal");
+const historyStudentAvatar    = $("#historyStudentAvatar");
+const historyStudentName      = $("#historyStudentName");
+const historyStudentMeta      = $("#historyStudentMeta");
+const historySummary          = $("#historySummary");
+const historyTeacherBreakdown = $("#historyTeacherBreakdown");
+const historyTableBody        = $("#historyTableBody");
+const historyCloseBtn         = $("#historyCloseBtn");
 
 /* ========================================
    STATE
@@ -346,7 +357,11 @@ let logDateFilterValue = "all";
 let logDateCustomValue = "";
 let logLimit = 200;
 let logHasMore = false;
+let logStudentFilterValue = "";
+let unsubscribeHistory = null;
+let historyStudentId = null;
 
+/* Student history modal refs (DOM elements defined above). */
 /* Admin award-as selector toast — registered here (after DOM refs exist). */
 if (typeof awardAsSelect !== "undefined" && awardAsSelect) {
   awardAsSelect.addEventListener("change", () => {
@@ -722,6 +737,7 @@ logToggleBtn.addEventListener("click", () => {
   scoreboardView.style.display = "none";
   if (unsubscribeTeachers) { unsubscribeTeachers(); unsubscribeTeachers = null; }
   logView.style.display = "block";
+  populateLogStudentFilter();
   setupLogListener();
 });
 
@@ -767,6 +783,7 @@ function setupRealTimeListener() {
       snapshot.forEach((d) => students.push({ id: d.id, ...d.data() }));
       allStudents = students;
       populateClassFilter();
+      populateLogStudentFilter();
 
       if (students.length === 0) {
         showEmptyState();
@@ -854,7 +871,7 @@ function renderStudents(students) {
       return `
         <div class="student-card student-card-${key}" id="student-${student.id}">
           <div class="student-avatar student-avatar-${key}">${initials}</div>
-          <div class="student-info">
+          <div class="student-info student-info-clickable" data-history-student-id="${student.id}" title="View ${escapeAttr(student.name)}'s point history">
             <div class="student-name">${escapeHtml(student.name)}</div>
             <span class="student-house-badge house-badge-${key}">${student.house}</span>
             ${student.className ? `<span class="student-class-badge">${escapeHtml(student.className)}</span>` : ''}
@@ -879,6 +896,9 @@ function renderStudents(students) {
   });
   document.querySelectorAll(".merit-btn-minus").forEach((btn) => {
     btn.addEventListener("click", handlePointClick);
+  });
+  document.querySelectorAll(".student-info-clickable").forEach((el) => {
+    el.addEventListener("click", () => openStudentHistory(el.dataset.historyStudentId));
   });
 }
 
@@ -1562,6 +1582,25 @@ function formatDayHeader(d) {
   return diffDays <= 1 ? `${rel} · ${full}` : full;
 }
 
+function populateLogStudentFilter() {
+  if (!logStudentFilter) return;
+  const previous = logStudentFilterValue || logStudentFilter.value || "";
+  const sorted = [...allStudents].sort((a, b) =>
+    (a.name || "").localeCompare(b.name || "", undefined, { sensitivity: "base" }));
+  logStudentFilter.innerHTML =
+    `<option value="">All students</option>` +
+    sorted.map((s) => `<option value="${escapeAttr(s.id)}">${escapeHtml(s.name)}${s.className ? ` (${escapeHtml(s.className)})` : ""}</option>`).join("");
+  logStudentFilterValue = sorted.some((s) => s.id === previous) ? previous : "";
+  logStudentFilter.value = logStudentFilterValue;
+}
+
+if (logStudentFilter) {
+  logStudentFilter.addEventListener("change", () => {
+    logStudentFilterValue = logStudentFilter.value || "";
+    renderLogList(allLogEntries);
+  });
+}
+
 function populateLogTeacherFilter(entries) {
   if (!logTeacherFilter) return;
   const previous = logTeacherFilterValue || logTeacherFilter.value || "";
@@ -1649,6 +1688,7 @@ function formatFullTime(timestamp) {
 
 function renderLogList(entries) {
   const filtered = (entries || []).filter((e) => {
+    if (logStudentFilterValue && (e.studentId || "") !== logStudentFilterValue) return false;
     if (logTeacherFilterValue) {
       const want = logTeacherFilterValue.toLowerCase();
       const teacher = String(e.teacherEmail || "").toLowerCase();
@@ -1660,7 +1700,7 @@ function renderLogList(entries) {
     return true;
   });
 
-  const hasFilter = logTeacherFilterValue || logTypeFilterValue || logDateFilterValue !== "all";
+  const hasFilter = logStudentFilterValue || logTeacherFilterValue || logTypeFilterValue || logDateFilterValue !== "all";
   const shown = hasFilter
     ? `${filtered.length} of ${entries.length}`
     : `${filtered.length}`;
@@ -1740,6 +1780,134 @@ function renderLogList(entries) {
   }
   logTableBody.innerHTML = html;
 }
+
+/* ========================================
+   STUDENT HISTORY — points + awarding teacher per student
+   ----------------------------------------
+   Clicking a student card opens this modal with every logged award for
+   that student and which teacher gave it. Uses a where-only query (no
+   orderBy) so no composite index is needed; sorting happens client-side.
+   ======================================== */
+function openStudentHistory(studentId) {
+  const student = allStudents.find((s) => s.id === studentId);
+  if (!student) { showToast("Student not found.", "error"); return; }
+  historyStudentId = studentId;
+
+  const key = (student.house || "").toLowerCase();
+  const initials = (student.name || "?").split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2);
+  historyStudentAvatar.textContent = initials;
+  historyStudentAvatar.className = `student-avatar student-avatar-${key}`;
+  historyStudentName.textContent = student.name || "Student";
+  historyStudentMeta.textContent =
+    `${student.house || "—"}${student.className ? ` · ${student.className}` : ""} · Behaviour: ${student.merits || 0} · Uniform: ${student.uniformPoints || 0}`;
+  historySummary.innerHTML = "";
+  historyTeacherBreakdown.innerHTML = "";
+  historyTableBody.innerHTML = `<tr><td colspan="4" class="student-table-empty">Loading history…</td></tr>`;
+  studentHistoryModal.style.display = "flex";
+  document.body.style.overflow = "hidden";
+
+  if (unsubscribeHistory) { unsubscribeHistory(); unsubscribeHistory = null; }
+  try {
+    const q = query(collection(db, "meritLog"), where("studentId", "==", studentId), limit(500));
+    unsubscribeHistory = onSnapshot(q, (snap) => {
+      const entries = [];
+      snap.forEach((d) => entries.push({ id: d.id, ...d.data() }));
+      entries.sort((a, b) => {
+        const ta = logEntryDate(a)?.getTime() ?? -1;
+        const tb = logEntryDate(b)?.getTime() ?? -1;
+        return tb - ta;
+      });
+      renderHistoryEntries(entries);
+    }, (error) => {
+      console.error("History listener error:", error);
+      historyTableBody.innerHTML = `<tr><td colspan="4" class="student-table-empty">Failed to load history.</td></tr>`;
+    });
+  } catch (error) {
+    console.error("Error opening student history:", error);
+    historyTableBody.innerHTML = `<tr><td colspan="4" class="student-table-empty">Failed to load history.</td></tr>`;
+  }
+}
+
+function renderHistoryEntries(entries) {
+  if (!entries.length) {
+    historySummary.innerHTML = `<span class="history-stat">No points recorded yet for this student.</span>`;
+    historyTeacherBreakdown.innerHTML = "";
+    historyTableBody.innerHTML = `<tr><td colspan="4" class="student-table-empty">No points recorded yet.</td></tr>`;
+    return;
+  }
+
+  let behaviorTotal = 0, uniformTotal = 0;
+  const perTeacher = {};
+  for (const e of entries) {
+    const chg = typeof e.change === "number" ? e.change : 0;
+    if ((e.type || "honor") === "uniform") uniformTotal += chg;
+    else behaviorTotal += chg;
+    const teacher = (e.teacherEmail || "Unknown").toLowerCase();
+    if (!perTeacher[teacher]) perTeacher[teacher] = { email: e.teacherEmail || "Unknown", total: 0, count: 0 };
+    perTeacher[teacher].total += chg;
+    perTeacher[teacher].count += 1;
+  }
+
+  historySummary.innerHTML = `
+    <span class="history-stat"><strong>${entries.length}</strong> award${entries.length !== 1 ? "s" : ""}</span>
+    <span class="history-stat history-stat-honor">🏅 <strong>${behaviorTotal >= 0 ? "+" : ""}${behaviorTotal}</strong> behaviour</span>
+    <span class="history-stat history-stat-uniform">👔 <strong>${uniformTotal >= 0 ? "+" : ""}${uniformTotal}</strong> uniform</span>`;
+
+  const ranked = Object.values(perTeacher).sort((a, b) => b.total - a.total);
+  historyTeacherBreakdown.innerHTML =
+    `<div class="history-breakdown-title">Given by</div>` +
+    ranked.map((t) => `
+      <div class="history-teacher-row">
+        <span class="history-teacher-email">${escapeHtml(t.email)}</span>
+        <span class="history-teacher-count">${t.count} award${t.count !== 1 ? "s" : ""}</span>
+        <span class="log-change ${t.total > 0 ? "log-change-plus" : t.total < 0 ? "log-change-minus" : ""}">${t.total > 0 ? "+" : ""}${t.total}</span>
+      </div>`).join("");
+
+  historyTableBody.innerHTML = entries.map((e) => {
+    const type = e.type === "uniform" ? "uniform" : "honor";
+    const typeLabel = type === "uniform" ? "Uniform" : "Behaviour";
+    const chg = typeof e.change === "number" ? e.change : null;
+    const badge = chg === null ? "—"
+      : `<span class="log-change ${chg > 0 ? "log-change-plus" : chg < 0 ? "log-change-minus" : ""}">${chg > 0 ? "+" : ""}${chg}</span>`;
+    const credited = e.teacherEmail || "—";
+    const awardedBy = e.awardedBy || "";
+    const teacherCell = awardedBy && awardedBy.toLowerCase() !== String(credited || "").toLowerCase()
+      ? `${escapeHtml(credited)}<div class="history-onbehalf">via ${escapeHtml(awardedBy)}</div>`
+      : escapeHtml(credited);
+    const d = logEntryDate(e);
+    const timeCell = d
+      ? `<div style="font-size:0.8rem;white-space:nowrap;">${escapeHtml(d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }))}</div>
+         <div style="font-size:0.7rem;color:var(--color-text-tertiary);white-space:nowrap;" title="${escapeAttr(formatFullTime(e.timestamp))}">${escapeHtml(formatTime(e.timestamp))}</div>`
+      : `<span style="font-size:0.8rem;color:var(--color-text-tertiary);">—</span>`;
+    return `<tr>
+      <td style="white-space:nowrap;">${badge}</td>
+      <td>${typeLabel}</td>
+      <td style="font-size:0.8rem;">${teacherCell}</td>
+      <td>${timeCell}</td>
+    </tr>`;
+  }).join("");
+}
+
+function closeStudentHistory() {
+  if (studentHistoryModal) studentHistoryModal.style.display = "none";
+  document.body.style.overflow = "";
+  historyStudentId = null;
+  if (unsubscribeHistory) { unsubscribeHistory(); unsubscribeHistory = null; }
+}
+
+if (historyCloseBtn) {
+  historyCloseBtn.addEventListener("click", closeStudentHistory);
+}
+if (studentHistoryModal) {
+  studentHistoryModal.addEventListener("click", (e) => {
+    if (e.target === studentHistoryModal) closeStudentHistory();
+  });
+}
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && studentHistoryModal && studentHistoryModal.style.display === "flex") {
+    closeStudentHistory();
+  }
+});
 
 /* ========================================
    TEACHERS — BULK ADD
