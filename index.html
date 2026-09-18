@@ -151,6 +151,15 @@
           </aside>
 
           <div class="dashboard-main">
+            <!-- Admin: award points on behalf of a teacher -->
+            <div id="adminAwardBar" class="admin-award-bar" style="display: none;">
+              <span class="admin-award-label">🧑‍🏫 Giving points as:</span>
+              <select id="awardAsSelect" class="form-select admin-award-select" title="Select which teacher gets credited in the activity log">
+                <option value="">Myself (admin)</option>
+              </select>
+              <span class="admin-award-hint">The selected teacher is credited in the log.</span>
+            </div>
+
             <!-- Point type tabs -->
             <div class="grid-tabs">
               <button class="grid-tab active" data-point-type="honor">🏅 Behaviour Point</button>
@@ -434,23 +443,58 @@
             <h3>Recent Merit Activity</h3>
             <span id="logCount" class="student-count-badge">0</span>
           </div>
+          <div class="log-filters">
+            <div class="filter-control">
+              <label for="logTeacherFilter" class="class-filter-label">Teacher</label>
+              <select id="logTeacherFilter" class="form-select class-filter-select">
+                <option value="">All teachers</option>
+              </select>
+            </div>
+            <div class="filter-control">
+              <label for="logTypeFilter" class="class-filter-label">Type</label>
+              <select id="logTypeFilter" class="form-select class-filter-select" style="width:150px;">
+                <option value="">All types</option>
+                <option value="honor">Behaviour Point</option>
+                <option value="uniform">Uniform</option>
+              </select>
+            </div>
+            <div class="filter-control">
+              <label for="logDateFilter" class="class-filter-label">Date</label>
+              <select id="logDateFilter" class="form-select class-filter-select" style="width:150px;">
+                <option value="all" selected>All time</option>
+                <option value="today">Today</option>
+                <option value="yesterday">Yesterday</option>
+                <option value="last7">Last 7 days</option>
+                <option value="last30">Last 30 days</option>
+                <option value="custom">Pick a day…</option>
+              </select>
+              <input type="date" id="logDateInput" class="form-input" style="display:none;width:150px;padding:8px 10px;" title="Pick a day">
+            </div>
+          </div>
           <div class="student-table-wrap">
             <table class="student-table">
               <thead>
                 <tr>
                   <th>Student</th>
                   <th>House</th>
+                  <th>Class</th>
+                  <th>Points</th>
                   <th>Type</th>
-                  <th>Teacher</th>
+                  <th>Teacher (credited)</th>
+                  <th>Awarded by</th>
                   <th>Time</th>
                 </tr>
               </thead>
               <tbody id="logTableBody">
                 <tr>
-                  <td colspan="5" class="student-table-empty">No merit activity yet.</td>
+                  <td colspan="8" class="student-table-empty">No merit activity yet.</td>
                 </tr>
               </tbody>
             </table>
+          </div>
+          <div id="logLoadMoreWrap" class="log-load-more" style="display:none;">
+            <span id="logShowingStatus" class="log-showing-status"></span>
+            <button id="logLoadMoreBtn" class="btn btn-outline btn-small">Load more</button>
           </div>
         </div>
       </main>
@@ -500,6 +544,6 @@
   </div>
 
   <!-- ============ APP ============ -->
-  <script type="module" src="app.js?v=4"></script>
+  <script type="module" src="app.js?v=6"></script>
 </body>
 </html>

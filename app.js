@@ -135,6 +135,82 @@ function roleLabel(role) {
   return "Teacher";
 }
 
+/* ========================================
+   ADMIN AWARD-AS-TEACHER
+   ----------------------------------------
+   Admins award points through the same grid buttons, but they first
+   select which teacher gets credited. The log stores both:
+     teacherEmail -> the credited teacher (selected, or the admin)
+     awardedBy    -> who actually clicked (always the signed-in admin)
+   Non-admins always credit themselves.
+   ======================================== */
+async function setupAdminAwardBar() {
+  if (!adminAwardBar || !awardAsSelect) return;
+  if (!isAdmin()) {
+    adminAwardBar.style.display = "none";
+    return;
+  }
+  adminAwardBar.style.display = "flex";
+  // Preserve the current selection across re-renders.
+  const previous = awardAsSelect.value || "";
+  awardAsSelect.innerHTML = `<option value="">Myself (admin)</option>`;
+  try {
+    const snap = await getDocs(collection(db, "allowedUsers"));
+    const teachers = [];
+    snap.forEach((d) => {
+      const data = d.data() || {};
+      const email = (data.email || d.id || "").toLowerCase();
+      if (email) teachers.push({ email, role: data.role || "" });
+    });
+    teachers.sort((a, b) => a.email.localeCompare(b.email));
+    for (const t of teachers) {
+      const opt = document.createElement("option");
+      opt.value = t.email;
+      opt.textContent = t.role === "LH" ? `${t.email} (House Leader)` : t.email;
+      awardAsSelect.appendChild(opt);
+    }
+    if (previous && [...awardAsSelect.options].some((o) => o.value === previous)) {
+      awardAsSelect.value = previous;
+    }
+  } catch (error) {
+    console.error("Error loading teacher list for award-as selector:", error);
+  }
+}
+
+// Email credited in meritLog.teacherEmail: the admin's selected teacher,
+// or the signed-in user for everyone else.
+function getCreditedTeacherEmail() {
+  if (isAdmin() && awardAsSelect && awardAsSelect.value) {
+    return awardAsSelect.value;
+  }
+  return currentUser?.email || "";
+}
+
+// Shared meritLog payload — deliberately detailed so the admin log view can
+// answer who / what / for whom / when / on whose behalf without extra reads.
+function buildLogEntry({ studentId, studentName, house, type, change }) {
+  const student = allStudents.find((s) => s.id === studentId);
+  const credited = getCreditedTeacherEmail();
+  const entry = {
+    studentId,
+    studentName,
+    house,
+    studentClass: student?.className || "",
+    type,
+    change,
+    teacherEmail: credited, // credited teacher (may differ from clicker for admins)
+    timestamp: serverTimestamp()
+  };
+  if (isAdmin()) {
+    entry.awardedBy = currentUser?.email || "";
+    entry.awardedByRole = "admin";
+    if (credited && credited.toLowerCase() !== (currentUser?.email || "").toLowerCase()) {
+      entry.onBehalfOf = true;
+    }
+  }
+  return entry;
+}
+
 const HOUSE_EMOJIS = {
   Green:  "🟢",
   Blue:   "🔵",
@@ -233,6 +309,19 @@ const studentProfileHonor   = $("#studentProfileHonor");
 const studentProfileUniform = $("#studentProfileUniform");
 const downloadTemplateBtn   = $("#downloadTemplateBtn");
 
+/* Admin award-as-teacher (admins credit a teacher in the log) */
+const adminAwardBar   = $("#adminAwardBar");
+const awardAsSelect   = $("#awardAsSelect");
+
+/* Log filters (admin) */
+const logTeacherFilter = $("#logTeacherFilter");
+const logTypeFilter    = $("#logTypeFilter");
+const logDateFilter    = $("#logDateFilter");
+const logDateInput     = $("#logDateInput");
+const logLoadMoreWrap  = $("#logLoadMoreWrap");
+const logLoadMoreBtn   = $("#logLoadMoreBtn");
+const logShowingStatus = $("#logShowingStatus");
+
 /* ========================================
    STATE
    ======================================== */
@@ -250,6 +339,26 @@ let selectedClass = null;
 let scoreboardType = "honor";
 let pointType = "honor"; // grid-wide: "honor" | "uniform"
 let sortBy = "name"; // "name" | "honor" | "uniform"
+let allLogEntries = [];
+let logTeacherFilterValue = "";
+let logTypeFilterValue = "";
+let logDateFilterValue = "all";
+let logDateCustomValue = "";
+let logLimit = 200;
+let logHasMore = false;
+
+/* Admin award-as selector toast — registered here (after DOM refs exist). */
+if (typeof awardAsSelect !== "undefined" && awardAsSelect) {
+  awardAsSelect.addEventListener("change", () => {
+    const credited = awardAsSelect.value || currentUser?.email || "yourself";
+    showToast(
+      awardAsSelect.value
+        ? `Points will now be credited to ${credited}.`
+        : "Points will now be credited to yourself (admin).",
+      "info"
+    );
+  });
+}
 
 /* ========================================
    TOAST SYSTEM
@@ -495,6 +604,9 @@ function showDashboardView() {
   logToggleBtn.style.display = isAdmin() ? "" : "none";
   scoreboardToggleBtn.style.display = "";
   studentView.style.display = "none";
+
+  // Admins pick which teacher gets credited for each award (see adminAwardBar).
+  setupAdminAwardBar();
 
   showLoading();
 }
@@ -1096,6 +1208,18 @@ async function handlePointClick(e) {
     return;
   }
 
+  // +25 is a big award — always confirm so accidental taps can't fire it.
+  if (isPlus25) {
+    const credited = getCreditedTeacherEmail();
+    const creditNote = isAdmin() && credited
+      ? `\nCredited to: ${credited}`
+      : "";
+    const ok = confirm(
+      `Give 25 ${pluralLabel} to ${studentName} (${house || "no house"})?${creditNote}\n\nType: ${type === "uniform" ? "Uniform" : "Behaviour Point"}\nThis will be recorded in the activity log.`
+    );
+    if (!ok) return;
+  }
+
   // A student may receive at most ONE uniform award per day (Bangkok time).
   // The check against the live snapshot gives instant feedback; the real guard
   // is the transaction below plus the uniformDay rule in firestore.rules, so
@@ -1133,15 +1257,13 @@ async function handlePointClick(e) {
       // written only when the points update succeeds.
       const batch = writeBatch(db);
       batch.update(doc(db, "students", studentId), update);
-      batch.set(doc(collection(db, "meritLog")), {
+      batch.set(doc(collection(db, "meritLog")), buildLogEntry({
         studentId,
         studentName,
         house,
         type,
-        teacherEmail: currentUser.email,
-        timestamp: serverTimestamp(),
         change
-      });
+      }));
       await batch.commit();
     }
 
@@ -1186,15 +1308,13 @@ async function awardUniformPoint(studentId, change, studentName, house) {
       uniformPoints: increment(change),
       uniformDay: bkkDayNumber()
     });
-    tx.set(doc(collection(db, "meritLog")), {
+    tx.set(doc(collection(db, "meritLog")), buildLogEntry({
       studentId,
       studentName,
       house,
       type: "uniform",
-      teacherEmail: currentUser.email,
-      timestamp: serverTimestamp(),
       change
-    });
+    }));
   });
 }
 
@@ -1347,20 +1467,155 @@ function setupLogListener() {
   if (unsubscribeLog) unsubscribeLog();
 
   const logRef = collection(db, "meritLog");
-  const q = query(logRef, orderBy("timestamp", "desc"), limit(25));
+  const q = query(logRef, orderBy("timestamp", "desc"), limit(logLimit));
 
   unsubscribeLog = onSnapshot(
     q,
     (snapshot) => {
-      const entries = [];
-      snapshot.forEach((d) => entries.push({ id: d.id, ...d.data() }));
-      renderLogList(entries);
+      allLogEntries = [];
+      snapshot.forEach((d) => allLogEntries.push({ id: d.id, ...d.data() }));
+      // If we filled the whole page, older entries may still exist.
+      logHasMore = snapshot.size >= logLimit;
+      populateLogTeacherFilter(allLogEntries);
+      renderLogList(allLogEntries);
     },
     (error) => {
       console.error("Log listener error:", error);
       showToast("Failed to load activity log.", "error");
     }
   );
+}
+
+function loadMoreLogs() {
+  logLimit = Math.min(logLimit + 300, 2000);
+  if (logLoadMoreBtn) {
+    logLoadMoreBtn.disabled = true;
+    logLoadMoreBtn.textContent = "Loading…";
+  }
+  setupLogListener();
+  setTimeout(() => {
+    if (logLoadMoreBtn) {
+      logLoadMoreBtn.disabled = false;
+      logLoadMoreBtn.textContent = "Load more";
+    }
+  }, 1500);
+}
+
+if (logLoadMoreBtn) {
+  logLoadMoreBtn.addEventListener("click", loadMoreLogs);
+}
+
+// Midnight (local) of the given date, used for day-range filters.
+function startOfDay(d) {
+  const c = new Date(d);
+  c.setHours(0, 0, 0, 0);
+  return c.getTime();
+}
+
+function logEntryDate(e) {
+  if (!e.timestamp) return null;
+  try {
+    return e.timestamp.toDate ? e.timestamp.toDate() : new Date(e.timestamp);
+  } catch {
+    return null;
+  }
+}
+
+function logDayKey(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function matchesDateFilter(e) {
+  if (logDateFilterValue === "all") return true;
+  const d = logEntryDate(e);
+  if (!d) return false; // pending/unknown timestamps only show under "All time"
+  const now = new Date();
+  const todayStart = startOfDay(now);
+  const dayMs = 86400000;
+  if (logDateFilterValue === "today") return d.getTime() >= todayStart;
+  if (logDateFilterValue === "yesterday") {
+    return d.getTime() >= todayStart - dayMs && d.getTime() < todayStart;
+  }
+  if (logDateFilterValue === "last7") return d.getTime() >= todayStart - 6 * dayMs;
+  if (logDateFilterValue === "last30") return d.getTime() >= todayStart - 29 * dayMs;
+  if (logDateFilterValue === "custom") {
+    if (!logDateCustomValue) return true;
+    const [y, m, day] = logDateCustomValue.split("-").map(Number);
+    if (!y || !m || !day) return true;
+    const customStart = new Date(y, m - 1, day).getTime();
+    return d.getTime() >= customStart && d.getTime() < customStart + dayMs;
+  }
+  return true;
+}
+
+function formatDayHeader(d) {
+  const now = new Date();
+  const todayStart = startOfDay(now);
+  const dayMs = 86400000;
+  const thisStart = startOfDay(d);
+  const diffDays = Math.round((todayStart - thisStart) / dayMs);
+  let rel = "";
+  if (diffDays === 0) rel = "Today";
+  else if (diffDays === 1) rel = "Yesterday";
+  else rel = d.toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric", year: "numeric" });
+  const full = d.toLocaleDateString(undefined, { weekday: "long", year: "numeric", month: "long", day: "numeric" });
+  return diffDays <= 1 ? `${rel} · ${full}` : full;
+}
+
+function populateLogTeacherFilter(entries) {
+  if (!logTeacherFilter) return;
+  const previous = logTeacherFilterValue || logTeacherFilter.value || "";
+  const emails = [...new Set(
+    entries.flatMap((e) => [e.teacherEmail, e.awardedBy]).filter(Boolean).map((m) => String(m).toLowerCase())
+  )].sort();
+  logTeacherFilter.innerHTML =
+    `<option value="">All teachers</option>` +
+    emails.map((m) => `<option value="${escapeAttr(m)}">${escapeHtml(m)}</option>`).join("");
+  logTeacherFilterValue = emails.includes(previous) ? previous : "";
+  logTeacherFilter.value = logTeacherFilterValue;
+}
+
+if (logTeacherFilter) {
+  logTeacherFilter.addEventListener("change", () => {
+    logTeacherFilterValue = logTeacherFilter.value || "";
+    renderLogList(allLogEntries);
+  });
+}
+
+if (logTypeFilter) {
+  logTypeFilter.addEventListener("change", () => {
+    logTypeFilterValue = logTypeFilter.value || "";
+    renderLogList(allLogEntries);
+  });
+}
+
+if (logDateFilter) {
+  logDateFilter.addEventListener("change", () => {
+    logDateFilterValue = logDateFilter.value || "all";
+    if (logDateInput) {
+      logDateInput.style.display = logDateFilterValue === "custom" ? "" : "none";
+      if (logDateFilterValue !== "custom") {
+        logDateInput.value = "";
+        logDateCustomValue = "";
+      } else if (!logDateInput.value) {
+        // Default the picker to today so "Pick a day" shows something.
+        logDateInput.value = new Date().toISOString().slice(0, 10);
+        logDateCustomValue = logDateInput.value;
+      }
+    }
+    renderLogList(allLogEntries);
+  });
+}
+
+if (logDateInput) {
+  logDateInput.addEventListener("change", () => {
+    logDateCustomValue = logDateInput.value || "";
+    if (logDateFilter && logDateFilter.value !== "custom") {
+      logDateFilter.value = "custom";
+      logDateFilterValue = "custom";
+    }
+    renderLogList(allLogEntries);
+  });
 }
 
 function formatTime(timestamp) {
@@ -1379,26 +1634,111 @@ function formatTime(timestamp) {
   return date.toLocaleDateString();
 }
 
-function renderLogList(entries) {
-  logCount.textContent = entries.length;
+function formatFullTime(timestamp) {
+  if (!timestamp) return "Unknown time";
+  const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
+  try {
+    return date.toLocaleString(undefined, {
+      year: "numeric", month: "short", day: "numeric",
+      hour: "2-digit", minute: "2-digit", second: "2-digit"
+    });
+  } catch {
+    return String(date);
+  }
+}
 
-  if (entries.length === 0) {
-    logTableBody.innerHTML = `<tr><td colspan="5" class="student-table-empty">No merit activity yet.</td></tr>`;
+function renderLogList(entries) {
+  const filtered = (entries || []).filter((e) => {
+    if (logTeacherFilterValue) {
+      const want = logTeacherFilterValue.toLowerCase();
+      const teacher = String(e.teacherEmail || "").toLowerCase();
+      const awarded = String(e.awardedBy || "").toLowerCase();
+      if (teacher !== want && awarded !== want) return false;
+    }
+    if (logTypeFilterValue && (e.type || "honor") !== logTypeFilterValue) return false;
+    if (!matchesDateFilter(e)) return false;
+    return true;
+  });
+
+  const hasFilter = logTeacherFilterValue || logTypeFilterValue || logDateFilterValue !== "all";
+  const shown = hasFilter
+    ? `${filtered.length} of ${entries.length}`
+    : `${filtered.length}`;
+  logCount.textContent = shown;
+
+  // Footer: "Showing X" + Load more when older entries may exist beyond the limit.
+  if (logLoadMoreWrap) {
+    const showFooter = entries.length > 0 && (logHasMore || filtered.length !== entries.length);
+    logLoadMoreWrap.style.display = showFooter ? "flex" : "none";
+    if (logShowingStatus) {
+      logShowingStatus.textContent = logHasMore
+        ? `Showing latest ${entries.length} (older entries available)`
+        : `Showing ${filtered.length} of ${entries.length}`;
+    }
+    if (logLoadMoreBtn) logLoadMoreBtn.style.display = logHasMore ? "" : "none";
+  }
+
+  if (filtered.length === 0) {
+    const msg = entries.length === 0
+      ? "No merit activity yet."
+      : "No activity matches the selected filters.";
+    logTableBody.innerHTML = `<tr><td colspan="8" class="student-table-empty">${msg}</td></tr>`;
     return;
   }
 
-  logTableBody.innerHTML = entries
-    .map(
-      (e) => `
-      <tr>
+  // Group all-time history by calendar day so older logs are easy to scan.
+  let html = "";
+  let lastDayKey = null;
+  for (const e of filtered) {
+    const d = logEntryDate(e);
+    const dayKey = d ? logDayKey(d) : "unknown";
+    if (dayKey !== lastDayKey) {
+      lastDayKey = dayKey;
+      const header = d ? formatDayHeader(d) : "Unknown date";
+      const count = filtered.filter((x) => {
+        const xd = logEntryDate(x);
+        return (xd ? logDayKey(xd) : "unknown") === dayKey;
+      }).length;
+      html += `<tr class="log-day-header"><td colspan="8">📅 ${escapeHtml(header)} — ${count} award${count !== 1 ? "s" : ""}</td></tr>`;
+    }
+    const type = e.type === "uniform" ? "uniform" : "honor";
+    const typeLabel = type === "uniform" ? "Uniform" : "Behaviour Point";
+    const change = typeof e.change === "number" ? e.change : null;
+    const changeBadge = change === null
+      ? "—"
+      : `<span class="log-change ${change > 0 ? "log-change-plus" : change < 0 ? "log-change-minus" : ""}">${change > 0 ? "+" : ""}${change}</span>`;
+    const credited = e.teacherEmail || "—";
+    const awardedBy = e.awardedBy || "";
+    const awardedCell = !awardedBy
+      ? `<span style="color:var(--color-text-tertiary);">—</span>`
+      : awardedBy.toLowerCase() === String(credited || "").toLowerCase()
+        ? `${escapeHtml(awardedBy)} <span class="log-self-badge">self</span>`
+        : `${escapeHtml(awardedBy)}${e.onBehalfOf ? ` <span class="log-behalf-badge">on behalf</span>` : ""}`;
+    const detailTitle = [
+      `Student: ${e.studentName || "—"} (${e.studentId || "—"})`,
+      `House: ${e.house || "—"} · Class: ${e.studentClass || "—"}`,
+      `Award: ${change !== null ? (change > 0 ? "+" : "") + change : "—"} ${typeLabel}`,
+      `Credited teacher: ${credited}`,
+      awardedBy ? `Awarded by: ${awardedBy}${e.awardedByRole ? ` (${e.awardedByRole})` : ""}` : "Awarded by: —",
+      `At: ${formatFullTime(e.timestamp)}`
+    ].join("\n");
+    const timeCell = d
+      ? `<div style="font-size:0.8rem;color:var(--color-text);white-space:nowrap;">${escapeHtml(d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" }))}</div>
+         <div style="font-size:0.7rem;color:var(--color-text-tertiary);white-space:nowrap;">${escapeHtml(d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }))} · ${escapeHtml(formatTime(e.timestamp))}</div>`
+      : `<span style="font-size:0.8rem;color:var(--color-text-tertiary);">—</span>`;
+    html += `
+      <tr title="${escapeAttr(detailTitle)}">
         <td>${escapeHtml(e.studentName || "—")}</td>
         <td>${e.house ? `<span class="house-dot house-dot-${e.house.toLowerCase()}"></span>${escapeHtml(e.house)}` : "—"}</td>
-        <td>${e.type === "uniform" ? "Uniform" : "Behaviour Point"}${typeof e.change === "number" ? ` ${e.change > 0 ? "+" : ""}${e.change}` : ""}</td>
-        <td>${escapeHtml(e.teacherEmail || "—")}</td>
-        <td style="white-space:nowrap;color:var(--color-text-tertiary);font-size:0.8rem;">${formatTime(e.timestamp)}</td>
-      </tr>`
-    )
-    .join("");
+        <td>${e.studentClass ? escapeHtml(e.studentClass) : `<span style="color:var(--color-text-tertiary);">—</span>`}</td>
+        <td style="white-space:nowrap;">${changeBadge}</td>
+        <td>${typeLabel}</td>
+        <td style="font-size:0.8rem;">${escapeHtml(credited)}</td>
+        <td style="font-size:0.8rem;">${awardedCell}</td>
+        <td style="white-space:nowrap;" title="${escapeAttr(formatFullTime(e.timestamp))}">${timeCell}</td>
+      </tr>`;
+  }
+  logTableBody.innerHTML = html;
 }
 
 /* ========================================
