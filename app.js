@@ -31,6 +31,7 @@ import {
   limit,
   serverTimestamp,
   writeBatch,
+  Timestamp,
   persistentLocalCache,
   persistentMultipleTabManager
 } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
@@ -333,6 +334,21 @@ const historyTeacherBreakdown = $("#historyTeacherBreakdown");
 const historyTableBody        = $("#historyTableBody");
 const historyCloseBtn         = $("#historyCloseBtn");
 
+/* Top rankings (log view buttons + modals) */
+const topStudentsBtn       = $("#topStudentsBtn");
+const topTeachersBtn       = $("#topTeachersBtn");
+const topStudentsModal     = $("#topStudentsModal");
+const topStudentsCloseBtn  = $("#topStudentsCloseBtn");
+const topBehaviorList      = $("#topBehaviorList");
+const topUniformList       = $("#topUniformList");
+const topTeachersModal     = $("#topTeachersModal");
+const topTeachersCloseBtn  = $("#topTeachersCloseBtn");
+const topTeachersSubtitle  = $("#topTeachersSubtitle");
+const topTeachersWeekLabel = $("#topTeachersWeekLabel");
+const topTeachersList      = $("#topTeachersList");
+const topTeachersPrevBtn   = $("#topTeachersPrevBtn");
+const topTeachersNextBtn   = $("#topTeachersNextBtn");
+
 /* ========================================
    STATE
    ======================================== */
@@ -360,6 +376,7 @@ let logHasMore = false;
 let logStudentFilterValue = "";
 let unsubscribeHistory = null;
 let historyStudentId = null;
+let teacherWeekOffset = 0; // 0 = last school week (Mon–Fri), 1 = current week, -1 = week before…
 
 /* Student history modal refs (DOM elements defined above). */
 /* Admin award-as selector toast — registered here (after DOM refs exist). */
@@ -1904,10 +1921,158 @@ if (studentHistoryModal) {
   });
 }
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape" && studentHistoryModal && studentHistoryModal.style.display === "flex") {
-    closeStudentHistory();
-  }
+  if (e.key !== "Escape") return;
+  if (studentHistoryModal && studentHistoryModal.style.display === "flex") closeStudentHistory();
+  if (topStudentsModal && topStudentsModal.style.display === "flex") closeTopStudents();
+  if (topTeachersModal && topTeachersModal.style.display === "flex") closeTopTeachers();
 });
+
+/* ========================================
+   TOP RANKINGS — log view buttons
+   ----------------------------------------
+   🏆 Top Students: top 5 by behaviour points and top 5 by uniform
+   points, computed from the already-loaded student list (all time).
+   🧑‍🏫 Top Teachers: top 5 by points awarded in a school week
+   (Mon 00:00 → Fri 23:59 local). Defaults to last school week with
+   ◀ ▶ navigation. Single-field range query — no composite index needed.
+   ======================================== */
+const TOP_MEDALS = ["🥇", "🥈", "🥉", "4.", "5."];
+
+function topStudentRow(s, field, i) {
+  const key = (s.house || "").toLowerCase();
+  const initials = (s.name || "?").split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2);
+  return `
+    <div class="top-row">
+      <span class="top-rank">${TOP_MEDALS[i] || `${i + 1}.`}</span>
+      <span class="student-avatar student-avatar-${key}" style="width:30px;height:30px;font-size:0.7rem;">${initials}</span>
+      <span class="top-name">${escapeHtml(s.name || "—")}
+        <span class="top-sub">${escapeHtml(s.house || "")}${s.className ? ` · ${escapeHtml(s.className)}` : ""}</span>
+      </span>
+      <span class="log-change ${i === 0 ? "log-change-plus" : ""}">${s[field] || 0}</span>
+    </div>`;
+}
+
+function openTopStudents() {
+  if (!allStudents.length) { showToast("No students to rank yet.", "error"); return; }
+  const byBehavior = [...allStudents].sort((a, b) => (b.merits || 0) - (a.merits || 0)).slice(0, 5);
+  const byUniform = [...allStudents].sort((a, b) => (b.uniformPoints || 0) - (a.uniformPoints || 0)).slice(0, 5);
+  topBehaviorList.innerHTML = byBehavior.map((s, i) => topStudentRow(s, "merits", i)).join("");
+  topUniformList.innerHTML = byUniform.map((s, i) => topStudentRow(s, "uniformPoints", i)).join("");
+  topStudentsModal.style.display = "flex";
+  document.body.style.overflow = "hidden";
+}
+
+function closeTopStudents() {
+  if (topStudentsModal) topStudentsModal.style.display = "none";
+  document.body.style.overflow = "";
+}
+
+// Monday 00:00 (local) of the school week for the given offset:
+// 0 = last Mon–Fri, 1 = current Mon–Fri, -1 = the week before last, …
+function schoolWeekRange(offset) {
+  const now = new Date();
+  const daysSinceMon = (now.getDay() + 6) % 7;
+  const thisMon = startOfDay(now) - daysSinceMon * 86400000;
+  const mon = thisMon + (offset - 1) * 7 * 86400000;
+  return { start: new Date(mon), end: new Date(mon + 5 * 86400000 - 1) };
+}
+
+function formatWeekLabel(start, end) {
+  const opts = { month: "short", day: "numeric" };
+  const sameMonth = start.getMonth() === end.getMonth() && start.getFullYear() === end.getFullYear();
+  const left = start.toLocaleDateString(undefined, sameMonth ? opts : { ...opts, year: "numeric" });
+  const right = end.toLocaleDateString(undefined, { ...opts, year: "numeric" });
+  return `Mon ${left} – Fri ${right}`;
+}
+
+async function openTopTeachers() {
+  teacherWeekOffset = 0; // always start on last school week
+  topTeachersModal.style.display = "flex";
+  document.body.style.overflow = "hidden";
+  await renderTopTeachers();
+}
+
+function closeTopTeachers() {
+  if (topTeachersModal) topTeachersModal.style.display = "none";
+  document.body.style.overflow = "";
+}
+
+async function renderTopTeachers() {
+  const { start, end } = schoolWeekRange(teacherWeekOffset);
+  topTeachersWeekLabel.textContent = formatWeekLabel(start, end);
+  topTeachersSubtitle.textContent = `Most points awarded · ${formatWeekLabel(start, end)}`;
+  topTeachersNextBtn.disabled = teacherWeekOffset >= 1;
+  topTeachersList.innerHTML = `<div class="student-table-empty">Loading…</div>`;
+  try {
+    const q = query(
+      collection(db, "meritLog"),
+      where("timestamp", ">=", Timestamp.fromDate(start)),
+      where("timestamp", "<=", Timestamp.fromDate(end)),
+      limit(1000)
+    );
+    const snap = await getDocs(q);
+    const perTeacher = {};
+    snap.forEach((d) => {
+      const e = d.data() || {};
+      const chg = typeof e.change === "number" ? e.change : 0;
+      if (chg <= 0) return; // only points actually awarded, not removals
+      const key = String(e.teacherEmail || "Unknown").toLowerCase();
+      if (!perTeacher[key]) {
+        perTeacher[key] = { email: e.teacherEmail || "Unknown", total: 0, awards: 0, behavior: 0, uniform: 0 };
+      }
+      const t = perTeacher[key];
+      t.total += chg;
+      t.awards += 1;
+      if ((e.type || "honor") === "uniform") t.uniform += chg;
+      else t.behavior += chg;
+    });
+    const ranked = Object.values(perTeacher).sort((a, b) => b.total - a.total).slice(0, 5);
+    if (!ranked.length) {
+      topTeachersList.innerHTML = `<div class="student-table-empty">No points were awarded that week.</div>`;
+      return;
+    }
+    topTeachersList.innerHTML = ranked.map((t, i) => `
+      <div class="top-row">
+        <span class="top-rank">${TOP_MEDALS[i] || `${i + 1}.`}</span>
+        <span class="top-name">${escapeHtml(t.email)}
+          <span class="top-sub">${t.awards} award${t.awards !== 1 ? "s" : ""} · 🏅 ${t.behavior} · 👔 ${t.uniform}</span>
+        </span>
+        <span class="log-change ${i === 0 ? "log-change-plus" : ""}">+${t.total}</span>
+      </div>`).join("");
+  } catch (error) {
+    console.error("Error loading top teachers:", error);
+    topTeachersList.innerHTML = `<div class="student-table-empty">Failed to load rankings.</div>`;
+  }
+}
+
+if (topStudentsBtn) topStudentsBtn.addEventListener("click", openTopStudents);
+if (topTeachersBtn) topTeachersBtn.addEventListener("click", openTopTeachers);
+if (topStudentsCloseBtn) topStudentsCloseBtn.addEventListener("click", closeTopStudents);
+if (topTeachersCloseBtn) topTeachersCloseBtn.addEventListener("click", closeTopTeachers);
+if (topStudentsModal) {
+  topStudentsModal.addEventListener("click", (e) => {
+    if (e.target === topStudentsModal) closeTopStudents();
+  });
+}
+if (topTeachersModal) {
+  topTeachersModal.addEventListener("click", (e) => {
+    if (e.target === topTeachersModal) closeTopTeachers();
+  });
+}
+if (topTeachersPrevBtn) {
+  topTeachersPrevBtn.addEventListener("click", () => {
+    teacherWeekOffset -= 1;
+    renderTopTeachers();
+  });
+}
+if (topTeachersNextBtn) {
+  topTeachersNextBtn.addEventListener("click", () => {
+    if (teacherWeekOffset < 1) {
+      teacherWeekOffset += 1;
+      renderTopTeachers();
+    }
+  });
+}
 
 /* ========================================
    TEACHERS — BULK ADD

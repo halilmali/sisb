@@ -430,12 +430,16 @@
       <main class="manage-content">
         <div class="manage-header">
           <h2>Teacher Activity Log</h2>
-          <button id="backFromLogBtn" class="btn btn-outline">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/>
-            </svg>
-            Back to Dashboard
-          </button>
+          <div class="log-header-actions">
+            <button id="topStudentsBtn" class="btn btn-outline" title="Top 5 students by behaviour and uniform points">🏆 Top Students</button>
+            <button id="topTeachersBtn" class="btn btn-outline" title="Top 5 teachers by points awarded, last school week (Mon–Fri)">🧑‍🏫 Top Teachers</button>
+            <button id="backFromLogBtn" class="btn btn-outline">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/>
+              </svg>
+              Back to Dashboard
+            </button>
+          </div>
         </div>
 
         <div class="student-list-section">
@@ -548,6 +552,50 @@
       <p>SISB Behaviour Point — Merit System</p>
     </footer>
 
+    <!-- ============ TOP STUDENTS MODAL ============ -->
+    <div id="topStudentsModal" class="modal-overlay" style="display: none;">
+      <div class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="topStudentsTitle">
+        <div class="modal-header">
+          <div>
+            <h3 id="topStudentsTitle">🏆 Top 5 Students</h3>
+            <p class="modal-subtitle">Highest behaviour and uniform points (all time)</p>
+          </div>
+          <button id="topStudentsCloseBtn" class="btn-icon" title="Close">✕</button>
+        </div>
+        <div class="top-columns">
+          <div class="top-column">
+            <div class="history-breakdown-title">🏅 Behaviour Points</div>
+            <div id="topBehaviorList" class="top-list"></div>
+          </div>
+          <div class="top-column">
+            <div class="history-breakdown-title">👔 Uniform Points</div>
+            <div id="topUniformList" class="top-list"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ TOP TEACHERS MODAL ============ -->
+    <div id="topTeachersModal" class="modal-overlay" style="display: none;">
+      <div class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="topTeachersTitle">
+        <div class="modal-header">
+          <div>
+            <h3 id="topTeachersTitle">🧑‍🏫 Top 5 Teachers</h3>
+            <p id="topTeachersSubtitle" class="modal-subtitle">Most points awarded in the school week</p>
+          </div>
+          <button id="topTeachersCloseBtn" class="btn-icon" title="Close">✕</button>
+        </div>
+        <div class="week-nav">
+          <button id="topTeachersPrevBtn" class="btn btn-outline btn-small" title="Previous school week">◀ Prev week</button>
+          <span id="topTeachersWeekLabel" class="week-label"></span>
+          <button id="topTeachersNextBtn" class="btn btn-outline btn-small" title="Next school week">Next week ▶</button>
+        </div>
+        <div class="history-list-wrap" style="padding-top:4px;">
+          <div id="topTeachersList" class="top-list"></div>
+        </div>
+      </div>
+    </div>
+
     <!-- ============ STUDENT HISTORY MODAL ============ -->
     <div id="studentHistoryModal" class="modal-overlay" style="display: none;">
       <div class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="historyStudentName">
@@ -583,6 +631,6 @@
   </div>
 
   <!-- ============ APP ============ -->
-  <script type="module" src="app.js?v=7"></script>
+  <script type="module" src="app.js?v=8"></script>
 </body>
 </html>

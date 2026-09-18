@@ -1847,6 +1847,96 @@ body {
   padding: 12px 22px 20px;
 }
 
+/* Log header actions (ranking buttons) */
+.log-header-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+/* Top rankings */
+.top-columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  padding: 14px 22px 20px;
+  overflow-y: auto;
+}
+
+.top-column {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.top-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.top-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--color-surface-hover);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 8px 12px;
+}
+
+.top-rank {
+  font-weight: 800;
+  font-size: 0.9rem;
+  min-width: 28px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.top-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: var(--color-text);
+}
+
+.top-sub {
+  display: block;
+  font-weight: 400;
+  font-size: 0.7rem;
+  color: var(--color-text-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.week-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 22px 4px;
+}
+
+.week-label {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--color-text);
+  text-align: center;
+}
+
+@media (max-width: 600px) {
+  .top-columns {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* --- Footer --- */
 .dashboard-footer {
   text-align: center;
