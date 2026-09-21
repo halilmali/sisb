@@ -353,7 +353,8 @@ const topTeachersCloseBtn  = $("#topTeachersCloseBtn");
 const topTeachersSubtitle  = $("#topTeachersSubtitle");
 const topTeachersWeekNav   = $("#topTeachersWeekNav");
 const topTeachersWeekLabel = $("#topTeachersWeekLabel");
-const topTeachersList      = $("#topTeachersList");
+const topTeachersBehaviorList = $("#topTeachersBehaviorList");
+const topTeachersUniformList  = $("#topTeachersUniformList");
 const topTeachersPrevBtn   = $("#topTeachersPrevBtn");
 const topTeachersNextBtn   = $("#topTeachersNextBtn");
 const topTeachersWeekScopeBtn = $("#topTeachersWeekScopeBtn");
@@ -1945,9 +1946,10 @@ document.addEventListener("keydown", (e) => {
    ----------------------------------------
    🏆 Top Students: top 5 by behaviour points and top 5 by uniform
    points, computed from the already-loaded student list (all time).
-   🧑‍🏫 Top Teachers: top 5 by points awarded in a school week
-   (Mon 00:00 → Fri 23:59 local). Defaults to last school week with
-   ◀ ▶ navigation. Single-field range query — no composite index needed.
+   🧑‍🏫 Top Teachers: top 5 by behaviour points awarded and top 5 by
+   uniform points awarded in a school week (Mon 00:00 → Fri 23:59 local).
+   Defaults to last school week with ◀ ▶ navigation.
+   Single-field range query — no composite index needed.
    ======================================== */
 const TOP_MEDALS = ["🥇", "🥈", "🥉", "4.", "5."];
 
@@ -2080,26 +2082,35 @@ async function renderTopTeachers() {
   if (topTeachersAllScopeBtn) topTeachersAllScopeBtn.classList.toggle("active", !isWeek);
   if (topTeachersWeekNav) topTeachersWeekNav.style.display = isWeek ? "flex" : "none";
 
+  const showLoading = () => {
+    topTeachersBehaviorList.innerHTML = `<div class="student-table-empty">Loading…</div>`;
+    topTeachersUniformList.innerHTML = `<div class="student-table-empty">Loading…</div>`;
+  };
+  const showError = () => {
+    topTeachersBehaviorList.innerHTML = `<div class="student-table-empty">Failed to load rankings.</div>`;
+    topTeachersUniformList.innerHTML = `<div class="student-table-empty">Failed to load rankings.</div>`;
+  };
+
   if (!isWeek) {
-    topTeachersSubtitle.textContent = "Most points awarded (all time)";
+    topTeachersSubtitle.textContent = "Most behaviour and uniform points awarded (all time)";
     topTeachersWeekLabel.textContent = "";
-    topTeachersList.innerHTML = `<div class="student-table-empty">Loading…</div>`;
+    showLoading();
     try {
       // No filters — capped at the latest 2000 awards to bound read cost.
       const snap = await getDocs(query(collection(db, "meritLog"), limit(2000)));
       aggregateAndRenderTeachers(snap, snap.size >= 2000 ? " · latest 2000 awards" : "");
     } catch (error) {
       console.error("Error loading top teachers:", error);
-      topTeachersList.innerHTML = `<div class="student-table-empty">Failed to load rankings.</div>`;
+      showError();
     }
     return;
   }
 
   const { start, end } = schoolWeekRange(teacherWeekOffset);
   topTeachersWeekLabel.textContent = formatWeekLabel(start, end);
-  topTeachersSubtitle.textContent = `Most points awarded · ${formatWeekLabel(start, end)}`;
+  topTeachersSubtitle.textContent = `Points awarded · ${formatWeekLabel(start, end)}`;
   topTeachersNextBtn.disabled = teacherWeekOffset >= 1;
-  topTeachersList.innerHTML = `<div class="student-table-empty">Loading…</div>`;
+  showLoading();
   try {
     const q = query(
       collection(db, "meritLog"),
@@ -2108,14 +2119,33 @@ async function renderTopTeachers() {
       limit(1000)
     );
     const snap = await getDocs(q);
-    aggregateAndRenderTeachers(snap, "", `No points were awarded that week.`);
+    aggregateAndRenderTeachers(
+      snap,
+      "",
+      "No behaviour points awarded that week.",
+      "No uniform points awarded that week."
+    );
   } catch (error) {
     console.error("Error loading top teachers:", error);
-    topTeachersList.innerHTML = `<div class="student-table-empty">Failed to load rankings.</div>`;
+    showError();
   }
 }
 
-function aggregateAndRenderTeachers(snap, rangeNote = "", emptyMsg = "No points have been awarded yet.") {
+function topTeacherRow(t, field, i) {
+  return `
+    <div class="top-row">
+      <span class="top-rank">${TOP_MEDALS[i] || `${i + 1}.`}</span>
+      <span class="top-name">${escapeHtml(t.email)}</span>
+      <span class="log-change ${i === 0 ? "log-change-plus" : ""}">+${t[field] || 0}</span>
+    </div>`;
+}
+
+function aggregateAndRenderTeachers(
+  snap,
+  rangeNote = "",
+  emptyBehaviorMsg = "No behaviour points have been awarded yet.",
+  emptyUniformMsg = "No uniform points have been awarded yet."
+) {
   const perTeacher = {};
   snap.forEach((d) => {
     const e = d.data() || {};
@@ -2123,28 +2153,22 @@ function aggregateAndRenderTeachers(snap, rangeNote = "", emptyMsg = "No points 
     if (chg <= 0) return; // only points actually awarded, not removals
     const key = String(e.teacherEmail || "Unknown").toLowerCase();
     if (!perTeacher[key]) {
-      perTeacher[key] = { email: e.teacherEmail || "Unknown", total: 0, awards: 0, behavior: 0, uniform: 0 };
+      perTeacher[key] = { email: e.teacherEmail || "Unknown", behavior: 0, uniform: 0 };
     }
     const t = perTeacher[key];
-    t.total += chg;
-    t.awards += 1;
     if ((e.type || "honor") === "uniform") t.uniform += chg;
     else t.behavior += chg;
   });
-  const ranked = Object.values(perTeacher).sort((a, b) => b.total - a.total).slice(0, 5);
-  if (!ranked.length) {
-    topTeachersList.innerHTML = `<div class="student-table-empty">${emptyMsg}</div>`;
-    return;
-  }
+  const all = Object.values(perTeacher);
+  const byBehavior = [...all].sort((a, b) => b.behavior - a.behavior).slice(0, 5);
+  const byUniform = [...all].sort((a, b) => b.uniform - a.uniform).slice(0, 5);
   if (rangeNote) topTeachersSubtitle.textContent += rangeNote;
-  topTeachersList.innerHTML = ranked.map((t, i) => `
-    <div class="top-row">
-      <span class="top-rank">${TOP_MEDALS[i] || `${i + 1}.`}</span>
-      <span class="top-name">${escapeHtml(t.email)}
-        <span class="top-sub">${t.awards} award${t.awards !== 1 ? "s" : ""} · 🏅 ${t.behavior} · 👔 ${t.uniform}</span>
-      </span>
-      <span class="log-change ${i === 0 ? "log-change-plus" : ""}">+${t.total}</span>
-    </div>`).join("");
+  topTeachersBehaviorList.innerHTML = byBehavior.length
+    ? byBehavior.map((t, i) => topTeacherRow(t, "behavior", i)).join("")
+    : `<div class="student-table-empty">${emptyBehaviorMsg}</div>`;
+  topTeachersUniformList.innerHTML = byUniform.length
+    ? byUniform.map((t, i) => topTeacherRow(t, "uniform", i)).join("")
+    : `<div class="student-table-empty">${emptyUniformMsg}</div>`;
 }
 
 if (topStudentsBtn) topStudentsBtn.addEventListener("click", openTopStudents);

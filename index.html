@@ -590,7 +590,7 @@
         <div class="modal-header">
           <div>
             <h3 id="topTeachersTitle">🧑‍🏫 Top 5 Teachers</h3>
-            <p id="topTeachersSubtitle" class="modal-subtitle">Most points awarded in the school week</p>
+            <p id="topTeachersSubtitle" class="modal-subtitle">Most behaviour and uniform points awarded in the school week</p>
           </div>
           <button id="topTeachersCloseBtn" class="btn-icon" title="Close">✕</button>
         </div>
@@ -603,8 +603,15 @@
           <span id="topTeachersWeekLabel" class="week-label"></span>
           <button id="topTeachersNextBtn" class="btn btn-outline btn-small" title="Next school week">Next week ▶</button>
         </div>
-        <div class="history-list-wrap" style="padding-top:4px;">
-          <div id="topTeachersList" class="top-list"></div>
+        <div class="top-columns">
+          <div class="top-column">
+            <div class="history-breakdown-title">🏅 Behaviour Points</div>
+            <div id="topTeachersBehaviorList" class="top-list"></div>
+          </div>
+          <div class="top-column">
+            <div class="history-breakdown-title">👔 Uniform Points</div>
+            <div id="topTeachersUniformList" class="top-list"></div>
+          </div>
         </div>
       </div>
     </div>
