@@ -196,8 +196,7 @@ const accessDenied      = $("#accessDenied");
 const retryBtn          = $("#retryBtn");
 
 /* Sidebar & Filter */
-const houseSidebar     = $("#houseSidebar");
-const sidebarHouseList = $("#sidebarHouseList");
+const houseFilterSelect = $("#houseFilterSelect");
 const filterIndicator  = $("#filterIndicator");
 const filterLabel      = $("#filterLabel");
 const clearFilterBtn   = $("#clearFilterBtn");
@@ -587,7 +586,6 @@ function showLoading() {
   emptyState.style.display = "none";
   errorState.style.display = "none";
   studentGrid.style.display = "none";
-  houseSidebar.style.display = "none";
 }
 
 function showAccessDenied() {
@@ -603,7 +601,6 @@ function showAccessDenied() {
   emptyState.style.display = "none";
   errorState.style.display = "none";
   studentGrid.style.display = "none";
-  houseSidebar.style.display = "none";
   accessDenied.style.display = "flex";
   userAvatar.src = currentUser?.photoURL || "";
   userAvatar.style.display = currentUser?.photoURL ? "block" : "none";
@@ -627,7 +624,6 @@ function showError(msg) {
   errorState.style.display = "flex";
   errorMessage.textContent = msg;
   studentGrid.style.display = "none";
-  houseSidebar.style.display = "none";
 }
 
 retryBtn.addEventListener("click", () => {
@@ -747,12 +743,10 @@ function setupRealTimeListener() {
       }
 
       renderStudents(students);
-      renderSidebar(students);
       loadingState.style.display = "none";
       emptyState.style.display = "none";
       errorState.style.display = "none";
       studentGrid.style.display = "grid";
-      houseSidebar.style.display = "block";
 
       // Also refresh management list if visible
       if (manageView.style.display === "block") {
@@ -771,7 +765,6 @@ function showEmptyState() {
   emptyState.style.display = "flex";
   errorState.style.display = "none";
   studentGrid.style.display = "none";
-  houseSidebar.style.display = "none";
 }
 
 /* ========================================
@@ -995,66 +988,10 @@ sortFilterSelect.addEventListener("change", () => {
 });
 
 /* ========================================
-   SIDEBAR — CLICKABLE HOUSE LIST
+   HOUSE FILTER — toolbar dropdown
    ======================================== */
-function renderSidebar(students) {
-  // Compute totals per house in a single pass
-  const houseData = {};
-  for (const house of HOUSES) houseData[house] = { total: 0, count: 0 };
-  for (const s of students) {
-    const data = houseData[s.house];
-    if (!data) continue;
-    data.count += 1;
-    data.total += s.merits || 0;
-  }
-
-  // Sort by merits descending
-  const sorted = Object.entries(houseData)
-    .filter(([, d]) => d.count > 0)
-    .sort(([, a], [, b]) => b.total - a.total);
-
-  const totalStudents = students.length;
-
-  // All Houses item
-  let html = `
-    <div class="sidebar-all-item${!selectedHouse ? " active" : ""}" data-house="">
-      <div class="sidebar-all-icon">🏠</div>
-      <span class="sidebar-all-name">All Houses</span>
-      <span class="sidebar-all-count">${totalStudents}</span>
-    </div>
-  `;
-
-  // Individual house items
-  for (const [house, data] of sorted) {
-    const key = house.toLowerCase();
-    const isActive = selectedHouse === house;
-    html += `
-      <div class="sidebar-house-item${isActive ? " active active-" + key : ""}" data-house="${house}">
-        <span class="sidebar-house-icon">${HOUSE_EMOJIS[house]}</span>
-        <div class="sidebar-house-info">
-          <div class="sidebar-house-name">${house}</div>
-          <div class="sidebar-house-count">${data.count} student${data.count !== 1 ? "s" : ""}</div>
-        </div>
-        <span class="sidebar-house-merits">${data.total}</span>
-      </div>`;
-  }
-
-  sidebarHouseList.innerHTML = html;
-}
-
-// One delegated listener for the house list — it is rebuilt both on every
-// snapshot and on every house click.
-sidebarHouseList.addEventListener("click", (e) => {
-  const el = e.target.closest("[data-house]");
-  if (!el) return;
-  const house = el.dataset.house;
-  // Toggle: clicking the same house deselects it
-  if (house === selectedHouse) {
-    selectedHouse = null;
-  } else {
-    selectedHouse = house || null;
-  }
-  renderSidebar(allStudents);
+houseFilterSelect.addEventListener("change", () => {
+  selectedHouse = houseFilterSelect.value || null;
   renderStudents(allStudents);
 });
 
@@ -1064,8 +1001,8 @@ sidebarHouseList.addEventListener("click", (e) => {
 clearFilterBtn.addEventListener("click", () => {
   selectedHouse = null;
   selectedClass = null;
+  houseFilterSelect.value = "";
   classFilterSelect.value = "";
-  renderSidebar(allStudents);
   renderStudents(allStudents);
 });
 

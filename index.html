@@ -123,52 +123,52 @@
           <button id="retryBtn" class="btn btn-primary">Retry</button>
         </div>
 
-        <!-- Two-column layout: House Sidebar + Student Grid -->
-        <div class="dashboard-layout" id="dashboardLayout">
-          <!-- House Sidebar (left) -->
-          <aside class="dashboard-sidebar" id="houseSidebar">
-            <div class="sidebar-header">
-              <h3 class="sidebar-title">🏆 Houses</h3>
-              <span class="sidebar-subtitle">Click to filter</span>
+        <!-- Student grid + filters -->
+        <div class="dashboard-main">
+          <!-- Point type tabs + house/class/sort filters — one row, sort pushed right -->
+          <div class="grid-toolbar">
+            <div class="grid-tabs">
+              <button class="grid-tab active" data-point-type="honor">🏅 Behaviour Point</button>
+              <button class="grid-tab" data-point-type="uniform">👔 Uniform</button>
             </div>
-            <div class="sidebar-list" id="sidebarHouseList"></div>
-          </aside>
 
-          <div class="dashboard-main">
-            <!-- Point type tabs + class/sort filters — one row, sort pushed right -->
-            <div class="grid-toolbar">
-              <div class="grid-tabs">
-                <button class="grid-tab active" data-point-type="honor">🏅 Behaviour Point</button>
-                <button class="grid-tab" data-point-type="uniform">👔 Uniform</button>
+            <div class="filter-toolbar">
+              <div class="filter-control">
+                <label for="houseFilterSelect" class="class-filter-label">House</label>
+                <select id="houseFilterSelect" class="form-select class-filter-select">
+                  <option value="">All Houses</option>
+                  <option value="Green">🟢 Green</option>
+                  <option value="Blue">🔵 Blue</option>
+                  <option value="Yellow">🟡 Yellow</option>
+                  <option value="Red">🔴 Red</option>
+                  <option value="Orange">🟠 Orange</option>
+                </select>
               </div>
-
-              <div class="filter-toolbar">
-                <div class="filter-control">
-                  <label for="classFilterSelect" class="class-filter-label">Class</label>
-                  <select id="classFilterSelect" class="form-select class-filter-select">
-                    <option value="">All Classes</option>
-                  </select>
-                </div>
-                <div class="filter-control filter-control-sort">
-                  <label for="sortFilterSelect" class="class-filter-label">Sort</label>
-                  <select id="sortFilterSelect" class="form-select class-filter-select">
-                    <option value="name" selected>Name (A–Z)</option>
-                    <option value="honor">Behaviour Points</option>
-                    <option value="uniform">Uniform points</option>
-                  </select>
-                </div>
+              <div class="filter-control">
+                <label for="classFilterSelect" class="class-filter-label">Class</label>
+                <select id="classFilterSelect" class="form-select class-filter-select">
+                  <option value="">All Classes</option>
+                </select>
+              </div>
+              <div class="filter-control filter-control-sort">
+                <label for="sortFilterSelect" class="class-filter-label">Sort</label>
+                <select id="sortFilterSelect" class="form-select class-filter-select">
+                  <option value="name" selected>Name (A–Z)</option>
+                  <option value="honor">Behaviour Points</option>
+                  <option value="uniform">Uniform points</option>
+                </select>
               </div>
             </div>
-
-            <!-- Filter indicator -->
-            <div id="filterIndicator" class="filter-indicator" style="display: none;">
-              <span id="filterLabel"></span>
-              <button id="clearFilterBtn" class="btn btn-small btn-ghost">Show All</button>
-            </div>
-
-            <!-- Student Grid -->
-            <div id="studentGrid" class="student-grid" style="display: none;"></div>
           </div>
+
+          <!-- Filter indicator -->
+          <div id="filterIndicator" class="filter-indicator" style="display: none;">
+            <span id="filterLabel"></span>
+            <button id="clearFilterBtn" class="btn btn-small btn-ghost">Show All</button>
+          </div>
+
+          <!-- Student Grid -->
+          <div id="studentGrid" class="student-grid" style="display: none;"></div>
         </div>
       </main>
     </div>
