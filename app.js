@@ -11,30 +11,6 @@ import {
   signOut,
   onAuthStateChanged
 } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
-import {
-  getFirestore,
-  initializeFirestore,
-  collection,
-  doc,
-  getDoc,
-  getDocs,
-  setDoc,
-  addDoc,
-  updateDoc,
-  deleteDoc,
-  increment,
-  runTransaction,
-  query,
-  where,
-  onSnapshot,
-  orderBy,
-  limit,
-  serverTimestamp,
-  writeBatch,
-  Timestamp,
-  persistentLocalCache,
-  persistentMultipleTabManager
-} from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
 /* ========================================
    CONFIGURATION
@@ -54,18 +30,47 @@ const firebaseConfig = {
    ======================================== */
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
+
+/* ========================================
+   LAZY FIRESTORE SDK
+   ----------------------------------------
+   The Firestore SDK (~150KB transferred, mostly unused on the logged-out
+   landing) is imported on demand after sign-in. The symbols below keep their
+   usual names so call sites are unchanged — they are assigned when the
+   module arrives via loadFirestore().
+   ======================================== */
 let db;
-try {
-  // Persistent IndexedDB cache: reads satisfied from the local cache are
-  // free, so page reloads / reconnects stop re-billing the full dataset.
-  db = initializeFirestore(app, {
-    localCache: persistentLocalCache({
-      tabManager: persistentMultipleTabManager()
+let getFirestore, initializeFirestore, collection, doc, getDoc, getDocs, setDoc, addDoc,
+  updateDoc, deleteDoc, increment, runTransaction, query, where, onSnapshot, orderBy,
+  limit, serverTimestamp, writeBatch, Timestamp,
+  persistentLocalCache, persistentMultipleTabManager;
+
+let firestoreReady = null;
+function loadFirestore() {
+  if (firestoreReady) return firestoreReady;
+  firestoreReady = import("https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js")
+    .then((fs) => {
+      ({ getFirestore, initializeFirestore, collection, doc, getDoc, getDocs, setDoc, addDoc,
+         updateDoc, deleteDoc, increment, runTransaction, query, where, onSnapshot, orderBy,
+         limit, serverTimestamp, writeBatch, Timestamp,
+         persistentLocalCache, persistentMultipleTabManager } = fs);
+      try {
+        // Persistent IndexedDB cache: reads satisfied from the local cache are
+        // free, so page reloads / reconnects stop re-billing the full dataset.
+        db = fs.initializeFirestore(app, {
+          localCache: fs.persistentLocalCache({ tabManager: fs.persistentMultipleTabManager() })
+        });
+      } catch (persistError) {
+        console.warn("Persistent cache unavailable, falling back to default:", persistError);
+        db = fs.getFirestore(app);
+      }
+      return fs;
     })
-  });
-} catch (persistError) {
-  console.warn("Persistent cache unavailable, falling back to default:", persistError);
-  db = getFirestore(app);
+    .catch((err) => {
+      firestoreReady = null; // allow a retry on the next sign-in
+      throw err;
+    });
+  return firestoreReady;
 }
 const provider = new GoogleAuthProvider();
 
@@ -354,6 +359,14 @@ function showToast(message, type = "info") {
 onAuthStateChanged(auth, async (user) => {
   if (user) {
     currentUser = user;
+    // The role checks below read Firestore, so make sure the SDK is in.
+    try {
+      await loadFirestore();
+    } catch (err) {
+      console.error("Failed to load the Firestore SDK:", err);
+      showToast("Couldn't load data services. Check your connection and reload.", "error");
+      return;
+    }
     // Check the student role first (the majority of users) so they pay one
     // read; teachers pay one read for the empty student lookup plus one for
     // the allowedUsers doc. Previously every login paid 2–3 reads.
@@ -2224,6 +2237,25 @@ fileInput.addEventListener("change", () => {
   }
 });
 
+// SheetJS (~950KB) is only needed for the admin Excel import/template, so it
+// loads on demand instead of blocking first paint. Cached after first use.
+let xlsxReady = null;
+function loadXLSX() {
+  if (!xlsxReady) {
+    xlsxReady = new Promise((resolve, reject) => {
+      const s = document.createElement("script");
+      s.src = "https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js";
+      s.onload = () => resolve(window.XLSX);
+      s.onerror = () => {
+        xlsxReady = null; // allow a retry
+        reject(new Error("Spreadsheet library failed to load"));
+      };
+      document.head.appendChild(s);
+    });
+  }
+  return xlsxReady;
+}
+
 async function handleFile(file) {
   const ext = file.name.split(".").pop().toLowerCase();
   if (!["xlsx", "xls", "csv"].includes(ext)) {
@@ -2232,6 +2264,7 @@ async function handleFile(file) {
   }
 
   try {
+    const XLSX = await loadXLSX();
     const data = new Uint8Array(await file.arrayBuffer());
     const workbook = XLSX.read(data, { type: "array" });
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
@@ -2351,7 +2384,14 @@ cancelPreviewBtn.addEventListener("click", () => {
 /* ========================================
    DOWNLOAD EXCEL TEMPLATE
    ======================================== */
-downloadTemplateBtn.addEventListener("click", () => {
+downloadTemplateBtn.addEventListener("click", async () => {
+  let XLSX;
+  try {
+    XLSX = await loadXLSX();
+  } catch {
+    showToast("Couldn't load the spreadsheet library. Check your connection and try again.", "error");
+    return;
+  }
   const rows = [
     ["Name", "House", "Class", "Email"],
     ["Alice Chen", "Green", "7A", "alice.chen@school.edu"],
