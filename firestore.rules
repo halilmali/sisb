@@ -127,11 +127,11 @@ service cloud.firestore {
       );
     }
 
-    // House leaders (LH) may award between 1 and 25 points on one axis.
-    function isLHUpTo25Award() {
+    // House leaders (LH) may award between 1 and 3 points on one axis.
+    function isLHUpTo3Award() {
       return isOnlyPointChanged() && (
-        (awardDelta("merits") >= 1 && awardDelta("merits") <= 25 && awardDelta("uniformPoints") == 0)
-        || (awardDelta("uniformPoints") >= 1 && awardDelta("uniformPoints") <= 25 && awardDelta("merits") == 0)
+        (awardDelta("merits") >= 1 && awardDelta("merits") <= 3 && awardDelta("uniformPoints") == 0)
+        || (awardDelta("uniformPoints") >= 1 && awardDelta("uniformPoints") <= 3 && awardDelta("merits") == 0)
       );
     }
 
@@ -140,7 +140,7 @@ service cloud.firestore {
     function isAwardAuthorized() {
       return isUniformAwardAllowed() && (
             isAdmin()
-         || (isAllowedUser() && role() == "LH" && isLHUpTo25Award())
+         || (isAllowedUser() && role() == "LH" && isLHUpTo3Award())
          || (isAllowedUser() && isTeacherAward())
       );
     }
@@ -154,7 +154,7 @@ service cloud.firestore {
     function isLHLog() {
       let chg = fieldNum(request.resource.data, "change");
       return chg >= 1
-          && chg <= 25;
+          && chg <= 3;
     }
 
     // A uniform-point log entry (positive change) is only allowed inside the
@@ -191,7 +191,7 @@ service cloud.firestore {
     }
 
     // Students — everyone signed in may view; only admins create/delete;
-    // point awards are granted by admin, teacher (+1), or house leader (up to 25).
+    // point awards are granted by admin, teacher (+1), or house leader (up to 3).
     match /students/{studentId} {
       allow read: if isSignedIn();
       allow create: if isAdmin();

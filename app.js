@@ -126,8 +126,8 @@ function isAdmin() {
   return currentUser && adminEmails.includes(currentUser.email);
 }
 
-// LH (house leader) users and admins may award the +25 bonus.
-function canGive25Points() {
+// LH (house leader) users and admins may award the +3 bonus.
+function canGive3Points() {
   return isAdmin() || currentUserRole === "LH";
 }
 
@@ -137,61 +137,15 @@ function roleLabel(role) {
 }
 
 /* ========================================
-   ADMIN AWARD-AS-TEACHER
+   MERIT LOG PAYLOAD
    ----------------------------------------
-   Admins award points through the same grid buttons, but they first
-   select which teacher gets credited. The log stores both:
-     teacherEmail -> the credited teacher (selected, or the admin)
-     awardedBy    -> who actually clicked (always the signed-in admin)
-   Non-admins always credit themselves.
+   The log stores who was credited (always the signed-in user) plus, for
+   admin awards, who actually clicked.
    ======================================== */
-async function setupAdminAwardBar() {
-  if (!adminAwardBar || !awardAsSelect) return;
-  if (!isAdmin()) {
-    adminAwardBar.style.display = "none";
-    return;
-  }
-  adminAwardBar.style.display = "flex";
-  // Preserve the current selection across re-renders.
-  const previous = awardAsSelect.value || "";
-  awardAsSelect.innerHTML = `<option value="">Myself (admin)</option>`;
-  try {
-    const snap = await getDocs(collection(db, "allowedUsers"));
-    const teachers = [];
-    snap.forEach((d) => {
-      const data = d.data() || {};
-      const email = (data.email || d.id || "").toLowerCase();
-      if (email) teachers.push({ email, role: data.role || "" });
-    });
-    teachers.sort((a, b) => a.email.localeCompare(b.email));
-    for (const t of teachers) {
-      const opt = document.createElement("option");
-      opt.value = t.email;
-      opt.textContent = t.role === "LH" ? `${t.email} (House Leader)` : t.email;
-      awardAsSelect.appendChild(opt);
-    }
-    if (previous && [...awardAsSelect.options].some((o) => o.value === previous)) {
-      awardAsSelect.value = previous;
-    }
-  } catch (error) {
-    console.error("Error loading teacher list for award-as selector:", error);
-  }
-}
-
-// Email credited in meritLog.teacherEmail: the admin's selected teacher,
-// or the signed-in user for everyone else.
-function getCreditedTeacherEmail() {
-  if (isAdmin() && awardAsSelect && awardAsSelect.value) {
-    return awardAsSelect.value;
-  }
-  return currentUser?.email || "";
-}
-
 // Shared meritLog payload — deliberately detailed so the admin log view can
-// answer who / what / for whom / when / on whose behalf without extra reads.
+// answer who / what / for whom / when without extra reads.
 function buildLogEntry({ studentId, studentName, house, type, change }) {
   const student = allStudents.find((s) => s.id === studentId);
-  const credited = getCreditedTeacherEmail();
   const entry = {
     studentId,
     studentName,
@@ -199,15 +153,12 @@ function buildLogEntry({ studentId, studentName, house, type, change }) {
     studentClass: student?.className || "",
     type,
     change,
-    teacherEmail: credited, // credited teacher (may differ from clicker for admins)
+    teacherEmail: currentUser?.email || "", // credited teacher (the signed-in user)
     timestamp: serverTimestamp()
   };
   if (isAdmin()) {
     entry.awardedBy = currentUser?.email || "";
     entry.awardedByRole = "admin";
-    if (credited && credited.toLowerCase() !== (currentUser?.email || "").toLowerCase()) {
-      entry.onBehalfOf = true;
-    }
   }
   return entry;
 }
@@ -224,7 +175,6 @@ const HOUSE_EMOJIS = {
    DOM REFS — General
    ======================================== */
 const $ = (sel) => document.querySelector(sel);
-const $$ = (sel) => document.querySelectorAll(sel);
 
 const loginScreen       = $("#loginScreen");
 const dashboardScreen   = $("#dashboardScreen");
@@ -237,10 +187,6 @@ const toastContainer    = $("#toastContainer");
 
 /* Dashboard view */
 const dashboardView     = $("#dashboardView");
-const totalStudentsEl   = $("#totalStudents");
-const totalMeritsEl     = $("#totalMerits");
-const totalPointsLabel  = $("#totalPointsLabel");
-const topHouseEl        = $("#topHouse");
 const studentGrid       = $("#studentGrid");
 const loadingState      = $("#loadingState");
 const emptyState        = $("#emptyState");
@@ -309,10 +255,6 @@ const studentProfileEmpty   = $("#studentProfileEmpty");
 const studentProfileHonor   = $("#studentProfileHonor");
 const studentProfileUniform = $("#studentProfileUniform");
 const downloadTemplateBtn   = $("#downloadTemplateBtn");
-
-/* Admin award-as-teacher (admins credit a teacher in the log) */
-const adminAwardBar   = $("#adminAwardBar");
-const awardAsSelect   = $("#awardAsSelect");
 
 /* Log filters (admin) */
 const logStudentFilter = $("#logStudentFilter");
@@ -386,25 +328,12 @@ let logLimit = 200;
 let logHasMore = false;
 let logStudentFilterValue = "";
 let unsubscribeHistory = null;
-let historyStudentId = null;
 let teacherWeekOffset = 0; // 0 = last school week (Mon–Fri), 1 = current week, -1 = week before…
 let topStudentScope = "week"; // "week" | "all"
 let studentWeekOffset = 0;
 let topTeacherScope = "week"; // "week" | "all"
 
 /* Student history modal refs (DOM elements defined above). */
-/* Admin award-as selector toast — registered here (after DOM refs exist). */
-if (typeof awardAsSelect !== "undefined" && awardAsSelect) {
-  awardAsSelect.addEventListener("change", () => {
-    const credited = awardAsSelect.value || currentUser?.email || "yourself";
-    showToast(
-      awardAsSelect.value
-        ? `Points will now be credited to ${credited}.`
-        : "Points will now be credited to yourself (admin).",
-      "info"
-    );
-  });
-}
 
 /* ========================================
    TOAST SYSTEM
@@ -424,7 +353,6 @@ function showToast(message, type = "info") {
    AUTH STATE MANAGEMENT
    ======================================== */
 onAuthStateChanged(auth, async (user) => {
-  console.log("Auth state changed:", user ? user.email : "null");
   if (user) {
     currentUser = user;
     // Check the student role first (the majority of users) so they pay one
@@ -651,9 +579,6 @@ function showDashboardView() {
   scoreboardToggleBtn.style.display = "";
   studentView.style.display = "none";
 
-  // Admins pick which teacher gets credited for each award (see adminAwardBar).
-  setupAdminAwardBar();
-
   showLoading();
 }
 
@@ -818,12 +743,10 @@ function setupRealTimeListener() {
 
       if (students.length === 0) {
         showEmptyState();
-        updateStats([]);
         return;
       }
 
       renderStudents(students);
-      updateStats(students);
       renderSidebar(students);
       loadingState.style.display = "none";
       emptyState.style.display = "none";
@@ -854,6 +777,10 @@ function showEmptyState() {
 /* ========================================
    RENDER DASHBOARD STUDENT GRID
    ======================================== */
+// Module-scope comparator so the sort doesn't allocate a closure per render.
+const compareByName = (a, b) =>
+  (a.name || "").localeCompare(b.name || "", undefined, { sensitivity: "base" });
+
 function renderStudents(students) {
   // Filter by selected house and class if active
   let filtered = [...students];
@@ -866,12 +793,10 @@ function renderStudents(students) {
 
   // Sort: by name by default; by points (honor or uniform) when selected
   filtered.sort((a, b) => {
-    const byName = () => (a.name || "").localeCompare(b.name || "", undefined, { sensitivity: "base" });
-    if (sortBy === "name") return byName();
+    if (sortBy === "name") return compareByName(a, b);
     const field = sortBy === "uniform" ? "uniformPoints" : "merits";
     const diff = (b[field] || 0) - (a[field] || 0);
-    if (diff !== 0) return diff;
-    return byName();
+    return diff !== 0 ? diff : compareByName(a, b);
   });
 
   // Show/hide filter indicator
@@ -909,29 +834,30 @@ function renderStudents(students) {
           </div>
           <div class="student-points">
             <div class="point-controls">
-              ${isAdmin() ? `<button class="merit-btn merit-btn-minus" data-type="${pointType}" data-student-id="${student.id}" data-student-name="${escapeHtml(student.name)}" data-house="${student.house}" title="Remove ${pointLabel} point from ${escapeHtml(student.name)}">−</button>` : ''}
+              ${isAdmin() ? `<button class="merit-btn merit-btn-minus" data-type="${pointType}" data-student-id="${student.id}" data-student-name="${escapeAttr(student.name)}" data-house="${student.house}" title="Remove ${pointLabel} point from ${escapeAttr(student.name)}">−</button>` : ''}
               <span class="merit-count" id="${pointType}-${student.id}">${pointType === "uniform" ? (student.uniformPoints || 0) : (student.merits || 0)}</span>
-              <button class="merit-btn merit-btn-plus" data-type="${pointType}" data-student-id="${student.id}" data-student-name="${escapeHtml(student.name)}" data-house="${student.house}" title="Give ${pointLabel} point to ${escapeHtml(student.name)}">+</button>
-              ${canGive25Points() ? `<button class="merit-btn merit-btn-plus25" data-type="${pointType}" data-student-id="${student.id}" data-student-name="${escapeHtml(student.name)}" data-house="${student.house}" title="Give 25 ${pointLabel} points (admin / house leader only)">+25</button>` : ''}
+              <button class="merit-btn merit-btn-plus" data-type="${pointType}" data-student-id="${student.id}" data-student-name="${escapeAttr(student.name)}" data-house="${student.house}" title="Give ${pointLabel} point to ${escapeAttr(student.name)}">+</button>
+              ${canGive3Points() ? `<button class="merit-btn merit-btn-plus3" data-type="${pointType}" data-student-id="${student.id}" data-student-name="${escapeAttr(student.name)}" data-house="${student.house}" title="Give 3 ${pointLabel} points (admin / house leader only)">+3</button>` : ''}
             </div>
           </div>
         </div>`;
     })
     .join("");
 
-  document.querySelectorAll(".merit-btn-plus").forEach((btn) => {
-    btn.addEventListener("click", handlePointClick);
-  });
-  document.querySelectorAll(".merit-btn-plus25").forEach((btn) => {
-    btn.addEventListener("click", handlePointClick);
-  });
-  document.querySelectorAll(".merit-btn-minus").forEach((btn) => {
-    btn.addEventListener("click", handlePointClick);
-  });
-  document.querySelectorAll(".student-info-clickable").forEach((el) => {
-    el.addEventListener("click", () => openStudentHistory(el.dataset.historyStudentId));
-  });
 }
+
+// One delegated listener set for the whole grid. The cards are rebuilt with
+// innerHTML on every snapshot, so per-button listeners meant re-attaching
+// ~4 handlers per student (plus document-wide scans) on every data change.
+studentGrid.addEventListener("click", (e) => {
+  const info = e.target.closest(".student-info-clickable");
+  if (info) {
+    openStudentHistory(info.dataset.historyStudentId);
+    return;
+  }
+  const btn = e.target.closest(".merit-btn");
+  if (btn) handlePointClick(btn);
+});
 
 /* ========================================
    GRID POINT TYPE TABS — Honor / Uniform
@@ -987,7 +913,6 @@ function applyUniformTabAvailability() {
       t.classList.toggle("active", t.dataset.pointType === "honor");
     });
     renderStudents(allStudents);
-    updateStats(allStudents);
   }
 }
 
@@ -1009,14 +934,16 @@ document.querySelectorAll(".grid-tab").forEach((tab) => {
       t.classList.toggle("active", t.dataset.pointType === pointType);
     });
     renderStudents(allStudents);
-    updateStats(allStudents);
   });
 });
 
+const HTML_ESCAPES = { "&": "&amp;", "<": "&lt;", ">": "&gt;" };
+
+// String escaping without allocating a DOM element on every call — this runs
+// for every field of every row in the render loops.
 function escapeHtml(text) {
-  const d = document.createElement("div");
-  d.textContent = text;
-  return d.innerHTML;
+  const str = text === null || text === undefined ? "" : String(text);
+  return str.replace(/[&<>]/g, (ch) => HTML_ESCAPES[ch]);
 }
 
 function escapeAttr(text) {
@@ -1026,10 +953,18 @@ function escapeAttr(text) {
 /* ========================================
    CLASS FILTER — POPULATE OPTIONS
    ======================================== */
+let classFilterSignature = "";
+
 function populateClassFilter() {
   const classes = [...new Set(
     allStudents.map((s) => (s.className || "").trim()).filter(Boolean)
   )].sort();
+
+  // Called on every snapshot — skip the rebuild when the class list is
+  // unchanged so the DOM (and an open dropdown) isn't needlessly reset.
+  const signature = classes.join("\u0000");
+  if (signature === classFilterSignature) return;
+  classFilterSignature = signature;
 
   const current = classFilterSelect.value;
   classFilterSelect.innerHTML =
@@ -1037,8 +972,9 @@ function populateClassFilter() {
     classes.map((c) => `<option value="${escapeAttr(c)}">${escapeHtml(c)}</option>`).join("");
 
   // Restore selection if the class still exists
-  classFilterSelect.value = classes.includes(current) ? current : "";
-  if (!classes.includes(current)) selectedClass = null;
+  const stillValid = classes.includes(current);
+  classFilterSelect.value = stillValid ? current : "";
+  if (!stillValid) selectedClass = null;
 }
 
 classFilterSelect.addEventListener("change", () => {
@@ -1062,12 +998,14 @@ sortFilterSelect.addEventListener("change", () => {
    SIDEBAR — CLICKABLE HOUSE LIST
    ======================================== */
 function renderSidebar(students) {
-  // Compute totals per house
+  // Compute totals per house in a single pass
   const houseData = {};
-  for (const house of HOUSES) {
-    const members = students.filter((s) => s.house === house);
-    const total = members.reduce((s, st) => s + (st.merits || 0), 0);
-    houseData[house] = { total, count: members.length };
+  for (const house of HOUSES) houseData[house] = { total: 0, count: 0 };
+  for (const s of students) {
+    const data = houseData[s.house];
+    if (!data) continue;
+    data.count += 1;
+    data.total += s.merits || 0;
   }
 
   // Sort by merits descending
@@ -1102,22 +1040,23 @@ function renderSidebar(students) {
   }
 
   sidebarHouseList.innerHTML = html;
-
-  // Attach click handlers — click on house items
-  sidebarHouseList.querySelectorAll("[data-house]").forEach((el) => {
-    el.addEventListener("click", () => {
-      const house = el.dataset.house;
-      // Toggle: clicking the same house deselects it
-      if (house === selectedHouse) {
-        selectedHouse = null;
-      } else {
-        selectedHouse = house || null;
-      }
-      renderSidebar(allStudents);
-      renderStudents(allStudents);
-    });
-  });
 }
+
+// One delegated listener for the house list — it is rebuilt both on every
+// snapshot and on every house click.
+sidebarHouseList.addEventListener("click", (e) => {
+  const el = e.target.closest("[data-house]");
+  if (!el) return;
+  const house = el.dataset.house;
+  // Toggle: clicking the same house deselects it
+  if (house === selectedHouse) {
+    selectedHouse = null;
+  } else {
+    selectedHouse = house || null;
+  }
+  renderSidebar(allStudents);
+  renderStudents(allStudents);
+});
 
 /* ========================================
    CLEAR FILTER
@@ -1129,28 +1068,6 @@ clearFilterBtn.addEventListener("click", () => {
   renderSidebar(allStudents);
   renderStudents(allStudents);
 });
-
-/* ========================================
-   UPDATE STATS
-   ======================================== */
-function updateStats(students) {
-  totalStudentsEl.textContent = students.length;
-
-  const field = pointType === "uniform" ? "uniformPoints" : "merits";
-  const totalPoints = students.reduce((s, st) => s + (st[field] || 0), 0);
-  totalMeritsEl.textContent = totalPoints;
-  totalPointsLabel.textContent = pointType === "uniform" ? "Total Uniform" : "Total Behaviour Points";
-
-  const houseTotals = {};
-  for (const s of students) {
-    houseTotals[s.house] = (houseTotals[s.house] || 0) + (s[field] || 0);
-  }
-  let topHouse = "—", topScore = -1;
-  for (const [h, sc] of Object.entries(houseTotals)) {
-    if (sc > topScore) { topScore = sc; topHouse = h; }
-  }
-  topHouseEl.textContent = topHouse;
-}
 
 /* ========================================
    SCOREBOARD — FULL PAGE HOUSE RANKING
@@ -1240,33 +1157,29 @@ function renderScoreboard() {
 /* ========================================
    AWARD / REMOVE POINTS (honor or uniform)
    ======================================== */
-async function handlePointClick(e) {
-  const btn = e.currentTarget;
+async function handlePointClick(btn) {
   const studentId = btn.dataset.studentId;
   const studentName = btn.dataset.studentName;
   const house = btn.dataset.house || "";
+  const student = allStudents.find((s) => s.id === studentId);
   const type = btn.dataset.type === "uniform" ? "uniform" : "honor";
   const isMinus = btn.classList.contains("merit-btn-minus");
-  const isPlus25 = btn.classList.contains("merit-btn-plus25");
-  const change = isMinus ? -1 : (isPlus25 ? 25 : 1);
+  const isPlus3 = btn.classList.contains("merit-btn-plus3");
+  const change = isMinus ? -1 : (isPlus3 ? 3 : 1);
   const label = type === "uniform" ? "uniform point" : "behaviour point";
   const pluralLabel = Math.abs(change) === 1 ? label : label + "s";
   const isUniformGrant = type === "uniform" && change > 0;
 
-  // +25 is restricted to admins and house leaders (LH).
-  if (isPlus25 && !canGive25Points()) {
-    showToast("Only admins or house leaders can give 25 points.", "error");
+  // +3 is restricted to admins and house leaders (LH).
+  if (isPlus3 && !canGive3Points()) {
+    showToast("Only admins or house leaders can give 3 points.", "error");
     return;
   }
 
-  // +25 is a big award — always confirm so accidental taps can't fire it.
-  if (isPlus25) {
-    const credited = getCreditedTeacherEmail();
-    const creditNote = isAdmin() && credited
-      ? `\nCredited to: ${credited}`
-      : "";
+  // +3 is a bulk award — always confirm so accidental taps can't fire it.
+  if (isPlus3) {
     const ok = confirm(
-      `Give 25 ${pluralLabel} to ${studentName} (${house || "no house"})?${creditNote}\n\nType: ${type === "uniform" ? "Uniform" : "Behaviour Point"}\nThis will be recorded in the activity log.`
+      `Give 3 ${pluralLabel} to ${studentName} (${house || "no house"})?\n\nType: ${type === "uniform" ? "Uniform" : "Behaviour Point"}\nThis will be recorded in the activity log.`
     );
     if (!ok) return;
   }
@@ -1279,8 +1192,7 @@ async function handlePointClick(e) {
   // repeatedly (the transaction still stamps uniformDay so a teacher's
   // once-a-day limit keeps counting the admin's award).
   if (isUniformGrant && !isAdmin()) {
-    const cached = allStudents.find((s) => s.id === studentId);
-    if (cached && cached.uniformDay === bkkDayNumber()) {
+    if (student && student.uniformDay === bkkDayNumber()) {
       showToast(`${studentName} has already received a uniform point today.`, "error");
       return;
     }
@@ -1288,7 +1200,6 @@ async function handlePointClick(e) {
 
   // Minus buttons can't go below zero
   if (isMinus) {
-    const student = allStudents.find(s => s.id === studentId);
     const current = type === "uniform" ? (student?.uniformPoints || 0) : (student?.merits || 0);
     if (!student || current <= 0) {
       showToast(`${studentName} has no ${label}s to remove.`, "error");
@@ -1407,7 +1318,7 @@ function setupTeachersListener() {
         <td>${escapeHtml(t.email)}</td>
         <td>${escapeHtml(roleLabel(t.role))}</td>
         <td style="width:60px;">
-          <button class="btn-icon delete-teacher-btn" data-teacher-email="${escapeHtml(t.id)}" title="Remove ${escapeHtml(t.email)}">
+          <button class="btn-icon delete-teacher-btn" data-teacher-email="${escapeAttr(t.id)}" title="Remove ${escapeAttr(t.email)}">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
             </svg>
@@ -1417,26 +1328,31 @@ function setupTeachersListener() {
     )
     .join("");
 
-  document.querySelectorAll(".delete-teacher-btn").forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      if (!isAdmin()) { showToast("Only the admin can remove teachers.", "error"); return; }
-      const email = btn.dataset.teacherEmail;
-      if (email.toLowerCase() === currentUser?.email?.toLowerCase()) {
-        showToast("You cannot remove yourself!", "error");
-        return;
-      }
-      if (confirm(`Remove ${email} from authorized teachers?`)) {
-        try {
-          await deleteDoc(doc(db, "allowedUsers", email));
-          showToast(`Removed ${email}.`, "info");
-        } catch (error) {
-          console.error("Error removing teacher:", error);
-          showToast("Failed to remove teacher. Please try again.", "error");
-        }
-      }
-    });
-  });
+  // (row handlers are delegated on teacherTableBody — see below)
 }
+
+// One delegated listener for the teacher table — its rows are rebuilt with
+// innerHTML on every snapshot, so per-button handlers meant a re-attach sweep
+// on each update.
+teacherTableBody.addEventListener("click", async (e) => {
+  const btn = e.target.closest(".delete-teacher-btn");
+  if (!btn) return;
+  if (!isAdmin()) { showToast("Only the admin can remove teachers.", "error"); return; }
+  const email = btn.dataset.teacherEmail;
+  if (email.toLowerCase() === currentUser?.email?.toLowerCase()) {
+    showToast("You cannot remove yourself!", "error");
+    return;
+  }
+  if (confirm(`Remove ${email} from authorized teachers?`)) {
+    try {
+      await deleteDoc(doc(db, "allowedUsers", email));
+      showToast(`Removed ${email}.`, "info");
+    } catch (error) {
+      console.error("Error removing teacher:", error);
+      showToast("Failed to remove teacher. Please try again.", "error");
+    }
+  }
+});
 
 /* ========================================
    HOME LINK — click logo to go to dashboard
@@ -1576,32 +1492,30 @@ function logDayKey(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-function matchesDateFilter(e) {
-  if (logDateFilterValue === "all") return true;
-  const d = logEntryDate(e);
-  if (!d) return false; // pending/unknown timestamps only show under "All time"
-  const now = new Date();
-  const todayStart = startOfDay(now);
+// Build the date-filter predicate once per render. "Now" and the custom-day
+// range are constant across entries, so recomputing them per row (plus parsing
+// the custom value per row) is pure waste in the log filter loop.
+function makeDateFilterMatcher() {
+  if (logDateFilterValue === "all") return () => true;
   const dayMs = 86400000;
-  if (logDateFilterValue === "today") return d.getTime() >= todayStart;
-  if (logDateFilterValue === "yesterday") {
-    return d.getTime() >= todayStart - dayMs && d.getTime() < todayStart;
-  }
-  if (logDateFilterValue === "last7") return d.getTime() >= todayStart - 6 * dayMs;
-  if (logDateFilterValue === "last30") return d.getTime() >= todayStart - 29 * dayMs;
+  const todayStart = startOfDay(new Date());
   if (logDateFilterValue === "custom") {
-    if (!logDateCustomValue) return true;
+    if (!logDateCustomValue) return () => true;
     const [y, m, day] = logDateCustomValue.split("-").map(Number);
-    if (!y || !m || !day) return true;
+    if (!y || !m || !day) return () => true;
     const customStart = new Date(y, m - 1, day).getTime();
-    return d.getTime() >= customStart && d.getTime() < customStart + dayMs;
+    return (d) => d.getTime() >= customStart && d.getTime() < customStart + dayMs;
   }
-  return true;
+  if (logDateFilterValue === "today") return (d) => d.getTime() >= todayStart;
+  if (logDateFilterValue === "yesterday") {
+    return (d) => d.getTime() >= todayStart - dayMs && d.getTime() < todayStart;
+  }
+  if (logDateFilterValue === "last7") return (d) => d.getTime() >= todayStart - 6 * dayMs;
+  if (logDateFilterValue === "last30") return (d) => d.getTime() >= todayStart - 29 * dayMs;
+  return () => true;
 }
 
-function formatDayHeader(d) {
-  const now = new Date();
-  const todayStart = startOfDay(now);
+function formatDayHeader(d, todayStart = startOfDay(new Date())) {
   const dayMs = 86400000;
   const thisStart = startOfDay(d);
   const diffDays = Math.round((todayStart - thisStart) / dayMs);
@@ -1613,11 +1527,19 @@ function formatDayHeader(d) {
   return diffDays <= 1 ? `${rel} · ${full}` : full;
 }
 
+let logStudentFilterSignature = "";
+
 function populateLogStudentFilter() {
   if (!logStudentFilter) return;
   const previous = logStudentFilterValue || logStudentFilter.value || "";
   const sorted = [...allStudents].sort((a, b) =>
     (a.name || "").localeCompare(b.name || "", undefined, { sensitivity: "base" }));
+
+  // Called on every snapshot — skip the rebuild when the roster is unchanged.
+  const signature = sorted.map((s) => `${s.id}\u0000${s.name}\u0000${s.className || ""}`).join("\u0001");
+  if (signature === logStudentFilterSignature) return;
+  logStudentFilterSignature = signature;
+
   logStudentFilter.innerHTML =
     `<option value="">All students</option>` +
     sorted.map((s) => `<option value="${escapeAttr(s.id)}">${escapeHtml(s.name)}${s.className ? ` (${escapeHtml(s.className)})` : ""}</option>`).join("");
@@ -1718,6 +1640,8 @@ function formatFullTime(timestamp) {
 }
 
 function renderLogList(entries) {
+  const dateMatcher = makeDateFilterMatcher();
+  const checkDates = logDateFilterValue !== "all";
   const filtered = (entries || []).filter((e) => {
     if (logStudentFilterValue && (e.studentId || "") !== logStudentFilterValue) return false;
     if (logTeacherFilterValue) {
@@ -1727,7 +1651,11 @@ function renderLogList(entries) {
       if (teacher !== want && awarded !== want) return false;
     }
     if (logTypeFilterValue && (e.type || "honor") !== logTypeFilterValue) return false;
-    if (!matchesDateFilter(e)) return false;
+    if (checkDates) {
+      // Pending/unknown timestamps only show under "All time".
+      const d = logEntryDate(e);
+      if (!d || !dateMatcher(d)) return false;
+    }
     return true;
   });
 
@@ -1758,18 +1686,23 @@ function renderLogList(entries) {
   }
 
   // Group all-time history by calendar day so older logs are easy to scan.
+  // Each entry's day key and the per-day totals are computed once up front
+  // (O(n)) instead of re-filtering the whole list for every day header (O(n²)).
+  const rows = filtered.map((e) => {
+    const d = logEntryDate(e);
+    return { e, d, dayKey: d ? logDayKey(d) : "unknown" };
+  });
+  const dayCounts = {};
+  for (const r of rows) dayCounts[r.dayKey] = (dayCounts[r.dayKey] || 0) + 1;
+  const todayStart = startOfDay(new Date());
+
   let html = "";
   let lastDayKey = null;
-  for (const e of filtered) {
-    const d = logEntryDate(e);
-    const dayKey = d ? logDayKey(d) : "unknown";
+  for (const { e, d, dayKey } of rows) {
     if (dayKey !== lastDayKey) {
       lastDayKey = dayKey;
-      const header = d ? formatDayHeader(d) : "Unknown date";
-      const count = filtered.filter((x) => {
-        const xd = logEntryDate(x);
-        return (xd ? logDayKey(xd) : "unknown") === dayKey;
-      }).length;
+      const header = d ? formatDayHeader(d, todayStart) : "Unknown date";
+      const count = dayCounts[dayKey];
       html += `<tr class="log-day-header"><td colspan="8">📅 ${escapeHtml(header)} — ${count} award${count !== 1 ? "s" : ""}</td></tr>`;
     }
     const type = e.type === "uniform" ? "uniform" : "honor";
@@ -1822,7 +1755,6 @@ function renderLogList(entries) {
 function openStudentHistory(studentId) {
   const student = allStudents.find((s) => s.id === studentId);
   if (!student) { showToast("Student not found.", "error"); return; }
-  historyStudentId = studentId;
 
   const key = (student.house || "").toLowerCase();
   const initials = (student.name || "?").split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2);
@@ -1843,12 +1775,11 @@ function openStudentHistory(studentId) {
     unsubscribeHistory = onSnapshot(q, (snap) => {
       const entries = [];
       snap.forEach((d) => entries.push({ id: d.id, ...d.data() }));
-      entries.sort((a, b) => {
-        const ta = logEntryDate(a)?.getTime() ?? -1;
-        const tb = logEntryDate(b)?.getTime() ?? -1;
-        return tb - ta;
-      });
-      renderHistoryEntries(entries);
+      // Decorate-sort-undecorate: parsing each Timestamp once beats parsing it
+      // on every comparison (O(n log n) Date allocations).
+      const decorated = entries.map((e) => ({ e, t: logEntryDate(e)?.getTime() ?? -1 }));
+      decorated.sort((a, b) => b.t - a.t);
+      renderHistoryEntries(decorated.map((x) => x.e));
     }, (error) => {
       console.error("History listener error:", error);
       historyTableBody.innerHTML = `<tr><td colspan="4" class="student-table-empty">Failed to load history.</td></tr>`;
@@ -1922,7 +1853,6 @@ function renderHistoryEntries(entries) {
 function closeStudentHistory() {
   if (studentHistoryModal) studentHistoryModal.style.display = "none";
   document.body.style.overflow = "";
-  historyStudentId = null;
   if (unsubscribeHistory) { unsubscribeHistory(); unsubscribeHistory = null; }
 }
 
@@ -2005,6 +1935,8 @@ async function renderTopStudents() {
       limit(1000)
     );
     const snap = await getDocs(q);
+    // One lookup map instead of an allStudents.find() scan per log doc.
+    const studentsById = new Map(allStudents.map((s) => [s.id, s]));
     const perStudent = {};
     snap.forEach((d) => {
       const e = d.data() || {};
@@ -2012,7 +1944,7 @@ async function renderTopStudents() {
       if (chg <= 0) return; // only points actually received, not removals
       const sid = e.studentId || e.studentName || "unknown";
       if (!perStudent[sid]) {
-        const s = allStudents.find((x) => x.id === e.studentId);
+        const s = studentsById.get(e.studentId);
         perStudent[sid] = {
           name: s?.name || e.studentName || "Unknown",
           house: s?.house || e.house || "",
@@ -2323,9 +2255,6 @@ addStudentSingleBtn.addEventListener("click", async () => {
    MANAGE — EXCEL / CSV IMPORT
    ======================================== */
 
-// Version marker to confirm the browser loaded the fixed file.
-console.log("[sisb] app.js v3 loaded — drop handler active");
-
 // Click upload area to trigger file input
 uploadArea.addEventListener("click", () => fileInput.click());
 
@@ -2533,14 +2462,14 @@ function renderManageStudentList() {
         <td>${s.uniformPoints || 0}</td>
         <td>
           <span class="student-email-cell">${escapeHtml(s.email || "—")}</span>
-          <button class="btn-icon edit-email-btn" data-student-id="${s.id}" data-student-name="${escapeHtml(s.name)}" data-email="${escapeAttr(s.email || "")}" title="Set email for ${escapeHtml(s.name)}">
+          <button class="btn-icon edit-email-btn" data-student-id="${s.id}" data-student-name="${escapeAttr(s.name)}" data-email="${escapeAttr(s.email || "")}" title="Set email for ${escapeAttr(s.name)}">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
             </svg>
           </button>
         </td>
         <td>
-          <button class="btn-icon delete-btn" data-student-id="${s.id}" data-student-name="${escapeHtml(s.name)}" title="Delete ${escapeHtml(s.name)}">
+          <button class="btn-icon delete-btn" data-student-id="${s.id}" data-student-name="${escapeAttr(s.name)}" title="Delete ${escapeAttr(s.name)}">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
             </svg>
@@ -2550,66 +2479,70 @@ function renderManageStudentList() {
     )
     .join("");
 
-  // Attach house change handlers (admins may reassign a student's house)
-  document.querySelectorAll(".house-select").forEach((sel) => {
-    sel.addEventListener("change", async () => {
-      if (!isAdmin()) { showToast("Only the admin can change a student's house.", "error"); renderManageStudentList(); return; }
-      const id = sel.dataset.studentId;
-      const name = sel.dataset.studentName;
-      const student = allStudents.find((s) => s.id === id);
-      const previous = student ? student.house : sel.options[0]?.value;
-      const house = sel.value;
-      if (!house || house === previous) return;
-      try {
-        await updateDoc(doc(db, "students", id), { house });
-        showToast(`${name} moved to ${HOUSE_EMOJIS[house]} ${house}. ✅`, "success");
-      } catch (error) {
-        console.error("Error setting house:", error);
-        showToast("Failed to change house. Please try again.", "error");
-        sel.value = previous || "";
-      }
-    });
-  });
-
-  // Attach email edit handlers
-  document.querySelectorAll(".edit-email-btn").forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      if (!isAdmin()) { showToast("Only the admin can edit student emails.", "error"); return; }
-      const id = btn.dataset.studentId;
-      const name = btn.dataset.studentName;
-      const current = btn.dataset.email || "";
-      const email = prompt(`Email for ${name}:`, current);
-      if (email === null) return;
-      const trimmed = email.trim().toLowerCase();
-      if (trimmed && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(trimmed)) {
-        showToast("Please enter a valid email address.", "error");
-        return;
-      }
-      try {
-        await updateDoc(doc(db, "students", id), { email: trimmed });
-        showToast(trimmed ? `Email set for ${name}. ✅` : `Email cleared for ${name}.`, "success");
-      } catch (error) {
-        console.error("Error setting email:", error);
-        showToast("Failed to set email. Please try again.", "error");
-      }
-    });
-  });
-
-  // Attach delete handlers
-  document.querySelectorAll(".delete-btn").forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      if (!isAdmin()) { showToast("Only the admin can delete students.", "error"); return; }
-      const id = btn.dataset.studentId;
-      const name = btn.dataset.studentName;
-      if (confirm(`Delete ${name}? This cannot be undone.`)) {
-        try {
-          await deleteDoc(doc(db, "students", id));
-          showToast(`Deleted ${name}.`, "info");
-        } catch (error) {
-          console.error("Error deleting student:", error);
-          showToast("Failed to delete student. Please try again.", "error");
-        }
-      }
-    });
-  });
+  // (row handlers are delegated on manageStudentBody — see below)
 }
+
+// One delegated listener set for the manage table. Rows are rebuilt with
+// innerHTML on every snapshot, so per-row handlers meant ~3N attachments per
+// data change. The handlers stay async so their awaits work as before.
+manageStudentBody.addEventListener("change", async (e) => {
+  // Admins may reassign a student's house.
+  const sel = e.target.closest(".house-select");
+  if (!sel) return;
+  if (!isAdmin()) { showToast("Only the admin can change a student's house.", "error"); renderManageStudentList(); return; }
+  const id = sel.dataset.studentId;
+  const name = sel.dataset.studentName;
+  const student = allStudents.find((s) => s.id === id);
+  const previous = student ? student.house : sel.options[0]?.value;
+  const house = sel.value;
+  if (!house || house === previous) return;
+  try {
+    await updateDoc(doc(db, "students", id), { house });
+    showToast(`${name} moved to ${HOUSE_EMOJIS[house]} ${house}. ✅`, "success");
+  } catch (error) {
+    console.error("Error setting house:", error);
+    showToast("Failed to change house. Please try again.", "error");
+    sel.value = previous || "";
+  }
+});
+
+manageStudentBody.addEventListener("click", async (e) => {
+  const editBtn = e.target.closest(".edit-email-btn");
+  if (editBtn) {
+    if (!isAdmin()) { showToast("Only the admin can edit student emails.", "error"); return; }
+    const id = editBtn.dataset.studentId;
+    const name = editBtn.dataset.studentName;
+    const current = editBtn.dataset.email || "";
+    const email = prompt(`Email for ${name}:`, current);
+    if (email === null) return;
+    const trimmed = email.trim().toLowerCase();
+    if (trimmed && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(trimmed)) {
+      showToast("Please enter a valid email address.", "error");
+      return;
+    }
+    try {
+      await updateDoc(doc(db, "students", id), { email: trimmed });
+      showToast(trimmed ? `Email set for ${name}. ✅` : `Email cleared for ${name}.`, "success");
+    } catch (error) {
+      console.error("Error setting email:", error);
+      showToast("Failed to set email. Please try again.", "error");
+    }
+    return;
+  }
+
+  const deleteBtn = e.target.closest(".delete-btn");
+  if (deleteBtn) {
+    if (!isAdmin()) { showToast("Only the admin can delete students.", "error"); return; }
+    const id = deleteBtn.dataset.studentId;
+    const name = deleteBtn.dataset.studentName;
+    if (confirm(`Delete ${name}? This cannot be undone.`)) {
+      try {
+        await deleteDoc(doc(db, "students", id));
+        showToast(`Deleted ${name}.`, "info");
+      } catch (error) {
+        console.error("Error deleting student:", error);
+        showToast("Failed to delete student. Please try again.", "error");
+      }
+    }
+  }
+});

@@ -26,11 +26,9 @@
   --color-text-tertiary: #94a3b8;
 
   /* Status */
-  --color-success: #22c55e;
   --color-success-bg: #f0fdf4;
   --color-error: #ef4444;
   --color-error-bg: #fef2f2;
-  --color-warning: #f59e0b;
 
   /* House colors — Green / Blue / Yellow / Red / Orange */
   --house-green: #16a34a;
@@ -365,32 +363,6 @@ body {
   white-space: nowrap;
 }
 
-/* --- Stats Bar --- */
-.stats-bar {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-  gap: 16px;
-  padding: 24px 32px 0;
-}
-
-.stat-card {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  padding: 18px 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  box-shadow: var(--shadow-sm);
-}
-
-.stat-value {
-  font-size: 1.5rem;
-  font-weight: 800;
-  color: var(--color-text);
-  letter-spacing: -0.02em;
-}
-
 /* --- Dashboard Content --- */
 .dashboard-content {
   flex: 1;
@@ -655,20 +627,35 @@ body {
 }
 
 /* ========================================
-   CLASS FILTER
+   POINT TYPE TABS + CLASS / SORT FILTERS
    ======================================== */
+/* One row: tabs and Class on the left, Sort pushed to the right edge */
+.grid-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 28px;
+  margin-bottom: 14px;
+}
+
 .filter-toolbar {
   display: flex;
   flex-wrap: wrap;
   gap: 24px;
-  align-items: flex-end;
-  margin-bottom: 14px;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+  margin-bottom: 0;
 }
 
 .filter-control {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.filter-control-sort {
+  margin-left: auto;
 }
 
 .class-filter-label {
@@ -839,7 +826,7 @@ body {
 .grid-tabs {
   display: flex;
   gap: 8px;
-  margin-bottom: 14px;
+  margin-bottom: 0;
 }
 
 .grid-tab {
@@ -963,8 +950,8 @@ body {
   transform: scale(0.95);
 }
 
-/* +25 button (admin only) */
-.merit-btn-plus25 {
+/* +3 button (admin / house leader only) */
+.merit-btn-plus3 {
   width: 34px;
   background: var(--house-yellow-light);
   color: var(--house-yellow);
@@ -972,14 +959,14 @@ body {
   font-weight: 800;
 }
 
-.merit-btn-plus25:hover {
+.merit-btn-plus3:hover {
   background: var(--house-yellow);
   color: white;
   transform: scale(1.1);
   box-shadow: 0 4px 12px rgba(202, 138, 4, 0.4);
 }
 
-.merit-btn-plus25:active {
+.merit-btn-plus3:active {
   transform: scale(0.95);
 }
 
@@ -1329,11 +1316,6 @@ body {
   color: var(--color-text-tertiary);
 }
 
-.form-input-mono {
-  font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
-  font-size: 0.78rem;
-}
-
 .form-textarea {
   resize: vertical;
   min-height: 100px;
@@ -1590,36 +1572,6 @@ body {
 .opt-yellow { color: var(--house-yellow); }
 .opt-red    { color: var(--house-red); }
 .opt-orange { color: var(--house-orange); }
-
-/* Admin award-as-teacher bar + detailed log */
-.admin-award-bar {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-  padding: 10px 14px;
-  background: var(--color-primary-light);
-  border: 1px solid #c7d2fe;
-  border-radius: var(--radius-md);
-  margin-bottom: 14px;
-  font-size: 0.85rem;
-}
-
-.admin-award-label {
-  font-weight: 700;
-  color: var(--color-text);
-  white-space: nowrap;
-}
-
-.admin-award-select {
-  min-width: 240px;
-  max-width: 320px;
-}
-
-.admin-award-hint {
-  font-size: 0.75rem;
-  color: var(--color-text-secondary);
-}
 
 .log-filters {
   display: flex;
@@ -2075,11 +2027,6 @@ body {
     padding: 16px;
   }
 
-  .stats-bar {
-    padding: 16px 16px 0;
-    grid-template-columns: 1fr 1fr;
-  }
-
   .dashboard-layout {
     grid-template-columns: 1fr;
   }
@@ -2134,6 +2081,10 @@ body {
   }
 
   /* Filter toolbar — let the selects use the available width */
+  .grid-toolbar {
+    gap: 10px;
+  }
+
   .filter-toolbar {
     gap: 10px;
   }
@@ -2209,7 +2160,7 @@ body {
     font-size: 0.85rem;
   }
 
-  .merit-btn-plus25 {
+  .merit-btn-plus3 {
     width: 30px;
     font-size: 0.55rem;
   }
@@ -2224,10 +2175,6 @@ body {
     padding: 8px 10px;
     font-size: 0.78rem;
     gap: 5px;
-  }
-
-  .stat-value {
-    font-size: 1.2rem;
   }
 
   .scoreboard-name {
@@ -2280,7 +2227,7 @@ body {
     font-size: 0.95rem;
   }
 
-  .merit-btn-plus25 {
+  .merit-btn-plus3 {
     width: 36px;
     font-size: 0.6rem;
   }
@@ -2293,10 +2240,6 @@ body {
   /* Hide the long email on small phones — the avatar is enough */
   .user-email {
     display: none;
-  }
-
-  .stats-bar {
-    grid-template-columns: 1fr;
   }
 
   .scoreboard-emoji {

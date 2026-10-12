@@ -93,22 +93,6 @@
     <!-- ============ DASHBOARD VIEW ============ -->
     <div id="dashboardView">
       <main class="dashboard-content">
-        <!-- Stats Bar -->
-        <div class="stats-bar">
-          <div class="stat-card">
-            <span class="stat-label">Total Students</span>
-            <span id="totalStudents" class="stat-value">0</span>
-          </div>
-          <div class="stat-card">
-            <span class="stat-label" id="totalPointsLabel">Total Behaviour Points</span>
-            <span id="totalMerits" class="stat-value">0</span>
-          </div>
-          <div class="stat-card">
-            <span class="stat-label">Top House</span>
-            <span id="topHouse" class="stat-value">—</span>
-          </div>
-        </div>
-
         <!-- Loading State -->
         <div id="loadingState" class="loading-state">
           <div class="spinner"></div>
@@ -151,36 +135,28 @@
           </aside>
 
           <div class="dashboard-main">
-            <!-- Admin: award points on behalf of a teacher -->
-            <div id="adminAwardBar" class="admin-award-bar" style="display: none;">
-              <span class="admin-award-label">🧑‍🏫 Giving points as:</span>
-              <select id="awardAsSelect" class="form-select admin-award-select" title="Select which teacher gets credited in the activity log">
-                <option value="">Myself (admin)</option>
-              </select>
-              <span class="admin-award-hint">The selected teacher is credited in the log.</span>
-            </div>
-
-            <!-- Point type tabs -->
-            <div class="grid-tabs">
-              <button class="grid-tab active" data-point-type="honor">🏅 Behaviour Point</button>
-              <button class="grid-tab" data-point-type="uniform">👔 Uniform</button>
-            </div>
-
-            <!-- Filters: class + sort -->
-            <div class="filter-toolbar">
-              <div class="filter-control">
-                <label for="classFilterSelect" class="class-filter-label">Class</label>
-                <select id="classFilterSelect" class="form-select class-filter-select">
-                  <option value="">All Classes</option>
-                </select>
+            <!-- Point type tabs + class/sort filters — one row, sort pushed right -->
+            <div class="grid-toolbar">
+              <div class="grid-tabs">
+                <button class="grid-tab active" data-point-type="honor">🏅 Behaviour Point</button>
+                <button class="grid-tab" data-point-type="uniform">👔 Uniform</button>
               </div>
-              <div class="filter-control">
-                <label for="sortFilterSelect" class="class-filter-label">Sort</label>
-                <select id="sortFilterSelect" class="form-select class-filter-select">
-                  <option value="name" selected>Name (A–Z)</option>
-                  <option value="honor">Behaviour Points</option>
-                  <option value="uniform">Uniform points</option>
-                </select>
+
+              <div class="filter-toolbar">
+                <div class="filter-control">
+                  <label for="classFilterSelect" class="class-filter-label">Class</label>
+                  <select id="classFilterSelect" class="form-select class-filter-select">
+                    <option value="">All Classes</option>
+                  </select>
+                </div>
+                <div class="filter-control filter-control-sort">
+                  <label for="sortFilterSelect" class="class-filter-label">Sort</label>
+                  <select id="sortFilterSelect" class="form-select class-filter-select">
+                    <option value="name" selected>Name (A–Z)</option>
+                    <option value="honor">Behaviour Points</option>
+                    <option value="uniform">Uniform points</option>
+                  </select>
+                </div>
               </div>
             </div>
 
