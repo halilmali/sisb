@@ -312,6 +312,7 @@ const topTeachersAllScopeBtn  = $("#topTeachersAllScopeBtn");
 let currentUser = null;
 let currentStudent = null;
 let currentUserRole = null; // role stored on the logged-in user's allowedUsers doc
+let currentUserHomeroom = null; // homeroom class stored on the allowedUsers doc
 let unsubscribeStudents = null;
 let unsubscribeStudent = null;
 let unsubscribeTeachers = null;
@@ -383,6 +384,8 @@ onAuthStateChanged(auth, async (user) => {
         // The admin list just loaded — refresh the Uniform tab immediately so
         // admins can use it right away instead of waiting for the 30s tick.
         applyUniformTabAvailability();
+        // Homeroom teachers get Uniform + their class preselected in-window.
+        applyHomeroomDefaults();
         setupRealTimeListener();
       } else {
         await fetchAdminConfig();
@@ -393,6 +396,7 @@ onAuthStateChanged(auth, async (user) => {
     currentUser = null;
     currentStudent = null;
     currentUserRole = null;
+    currentUserHomeroom = null;
     showLogin();
     if (unsubscribeStudents) {
       unsubscribeStudents();
@@ -531,6 +535,7 @@ async function checkIfAllowed(email) {
     const userSnap = await getDoc(userRef);
     if (userSnap.exists()) {
       currentUserRole = userSnap.data().role || null;
+      currentUserHomeroom = userSnap.data().homeroom || null;
       return true;
     }
     return false;
@@ -922,6 +927,24 @@ function applyUniformTabAvailability() {
   }
 }
 
+// Homeroom teachers signing in during the uniform window (Mon, Tue, Wed &
+// Fri 07:00–07:30 Bangkok) start with the Uniform tab and their homeroom
+// class already selected — the morning round is then two taps per student.
+function applyHomeroomDefaults() {
+  if (!currentUserHomeroom || !isUniformWindow()) return;
+  pointType = "uniform";
+  document.querySelectorAll(".grid-tab").forEach((t) => {
+    t.classList.toggle("active", t.dataset.pointType === "uniform");
+  });
+  selectedClass = currentUserHomeroom;
+  // The <select> may not have options yet (the roster arrives with the first
+  // snapshot) — populateClassFilter syncs it from selectedClass when it does.
+  if ([...classFilterSelect.options].some((o) => o.value === selectedClass)) {
+    classFilterSelect.value = selectedClass;
+  }
+  renderStudents(allStudents);
+}
+
 // Re-check at page load and regularly so the button flips at 07:00 / 07:30
 // without needing a refresh.
 document.addEventListener("DOMContentLoaded", () => {
@@ -977,10 +1000,18 @@ function populateClassFilter() {
     `<option value="">All Classes</option>` +
     classes.map((c) => `<option value="${escapeAttr(c)}">${escapeHtml(c)}</option>`).join("");
 
-  // Restore selection if the class still exists
-  const stillValid = classes.includes(current);
-  classFilterSelect.value = stillValid ? current : "";
-  if (!stillValid) selectedClass = null;
+  // Restore the active filter — including a homeroom class that has no
+  // students yet (e.g. assigned before the roster is imported), which just
+  // gets an extra option so the selection stays visible.
+  const desired = selectedClass || current;
+  if (desired && !classes.includes(desired)) {
+    classFilterSelect.insertAdjacentHTML(
+      "beforeend",
+      `<option value="${escapeAttr(desired)}">${escapeHtml(desired)}</option>`
+    );
+  }
+  classFilterSelect.value = desired || "";
+  selectedClass = desired || null;
 }
 
 classFilterSelect.addEventListener("change", () => {
@@ -1244,7 +1275,7 @@ function setupTeachersListener() {
       const teachers = [];
       snapshot.forEach((d) => {
         const data = d.data() || {};
-        teachers.push({ id: d.id, email: data.email || "—", role: data.role || "" });
+        teachers.push({ id: d.id, email: data.email || "—", role: data.role || "", homeroom: data.homeroom || "" });
       });
       renderTeacherList(teachers);
     },
@@ -1257,16 +1288,31 @@ function setupTeachersListener() {
   teacherCount.textContent = teachers.length;
 
   if (teachers.length === 0) {
-    teacherTableBody.innerHTML = `<tr><td colspan="3" class="student-table-empty">No teachers added yet.</td></tr>`;
+    teacherTableBody.innerHTML = `<tr><td colspan="4" class="student-table-empty">No teachers added yet.</td></tr>`;
     return;
   }
 
+  // Homeroom choices come from the classes students are actually in; a
+  // teacher's current homeroom stays selectable even if it has no students.
+  const knownClasses = [...new Set(
+    allStudents.map((s) => (s.className || "").trim()).filter(Boolean)
+  )].sort();
+
   teacherTableBody.innerHTML = teachers
-    .map(
-      (t) => `
+    .map((t) => {
+      const choices = t.homeroom && !knownClasses.includes(t.homeroom)
+        ? [...knownClasses, t.homeroom].sort()
+        : knownClasses;
+      return `
       <tr>
         <td>${escapeHtml(t.email)}</td>
         <td>${escapeHtml(roleLabel(t.role))}</td>
+        <td>
+          <select class="form-select homeroom-select" data-teacher-email="${escapeAttr(t.id)}" title="Homeroom class for ${escapeAttr(t.email)}">
+            <option value="">— none —</option>
+            ${choices.map((c) => `<option value="${escapeAttr(c)}"${c === t.homeroom ? " selected" : ""}>${escapeHtml(c)}</option>`).join("")}
+          </select>
+        </td>
         <td style="width:60px;">
           <button class="btn-icon delete-teacher-btn" data-teacher-email="${escapeAttr(t.id)}" title="Remove ${escapeAttr(t.email)}">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -1274,8 +1320,8 @@ function setupTeachersListener() {
             </svg>
           </button>
         </td>
-      </tr>`
-    )
+      </tr>`;
+    })
     .join("");
 
   // (row handlers are delegated on teacherTableBody — see below)
@@ -1301,6 +1347,29 @@ teacherTableBody.addEventListener("click", async (e) => {
       console.error("Error removing teacher:", error);
       showToast("Failed to remove teacher. Please try again.", "error");
     }
+  }
+});
+
+// Homeroom assignment (admin only) — saved straight to the teacher's
+// allowedUsers doc; the teacher picks it up on their next sign-in.
+teacherTableBody.addEventListener("change", async (e) => {
+  const sel = e.target.closest(".homeroom-select");
+  if (!sel) return;
+  if (!isAdmin()) {
+    showToast("Only the admin can change homeroom classes.", "error");
+    return;
+  }
+  const email = sel.dataset.teacherEmail;
+  const homeroom = sel.value || "";
+  try {
+    await updateDoc(doc(db, "allowedUsers", email), { homeroom });
+    showToast(
+      homeroom ? `Homeroom for ${email}: ${homeroom} ✅` : `Homeroom cleared for ${email}.`,
+      "success"
+    );
+  } catch (error) {
+    console.error("Error setting homeroom:", error);
+    showToast("Failed to set homeroom. Please try again.", "error");
   }
 });
 
@@ -1363,9 +1432,10 @@ addTeacherBtn.addEventListener("click", async () => {
   addTeacherBtn.textContent = "Adding...";
 
   try {
-    // Use email as the document ID
+    // Use email as the document ID; merge so re-adding a teacher never wipes
+    // fields like their homeroom class.
     const ref = doc(db, "allowedUsers", email);
-    await setDoc(ref, role ? { email, role } : { email });
+    await setDoc(ref, role ? { email, role } : { email }, { merge: true });
     showToast(`Added ${email} as an authorized teacher! ✅`, "success");
     teacherEmailInput.value = "";
   } catch (error) {
@@ -2143,7 +2213,8 @@ addTeachersBulkBtn.addEventListener("click", async () => {
     const batch = writeBatch(db);
     for (const email of emails) {
       const ref = doc(db, "allowedUsers", email);
-      batch.set(ref, bulkRole ? { email, role: bulkRole } : { email });
+      // merge: re-adding an existing teacher keeps their homeroom class.
+      batch.set(ref, bulkRole ? { email, role: bulkRole } : { email }, { merge: true });
     }
     await batch.commit();
     showToast(`Added ${emails.length} teacher${emails.length > 1 ? "s" : ""}! ✅`, "success");

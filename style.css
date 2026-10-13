@@ -1391,6 +1391,13 @@ body {
   font-size: 0.82rem;
 }
 
+/* Inline homeroom picker in the Authorized Teachers table */
+.homeroom-select {
+  min-width: 110px;
+  padding: 4px 8px;
+  font-size: 0.82rem;
+}
+
 .student-table-empty {
   text-align: center;
   padding: 40px 20px;
