@@ -306,6 +306,24 @@ const topTeachersNextBtn   = $("#topTeachersNextBtn");
 const topTeachersWeekScopeBtn = $("#topTeachersWeekScopeBtn");
 const topTeachersAllScopeBtn  = $("#topTeachersAllScopeBtn");
 
+/* Archive view (admin only) */
+const archiveToggleBtn          = $("#archiveToggleBtn");
+const archiveView               = $("#archiveView");
+const backFromArchiveBtn        = $("#backFromArchiveBtn");
+const archiveNowBtn             = $("#archiveNowBtn");
+const archiveCount              = $("#archiveCount");
+const archiveTableBody          = $("#archiveTableBody");
+const archiveDetailModal        = $("#archiveDetailModal");
+const archiveDetailTitle        = $("#archiveDetailTitle");
+const archiveDetailMeta         = $("#archiveDetailMeta");
+const archiveDetailSummary      = $("#archiveDetailSummary");
+const archiveDetailStudentsBody = $("#archiveDetailStudentsBody");
+const archiveDetailStudentsNote = $("#archiveDetailStudentsNote");
+const archiveDetailTeachersBody = $("#archiveDetailTeachersBody");
+const archiveDetailTeachersNote = $("#archiveDetailTeachersNote");
+const archiveDetailCloseBtn     = $("#archiveDetailCloseBtn");
+const archiveDetailDownloadBtn  = $("#archiveDetailDownloadBtn");
+
 /* ========================================
    STATE
    ======================================== */
@@ -337,6 +355,9 @@ let teacherWeekOffset = 0; // 0 = last school week (Mon–Fri), 1 = current week
 let topStudentScope = "week"; // "week" | "all"
 let studentWeekOffset = 0;
 let topTeacherScope = "week"; // "week" | "all"
+let allArchives = [];
+let unsubscribeArchives = null;
+let openArchiveId = null; // archive currently shown in the detail modal
 
 /* Student history modal refs (DOM elements defined above). */
 
@@ -405,6 +426,12 @@ onAuthStateChanged(auth, async (user) => {
     if (unsubscribeStudent) {
       unsubscribeStudent();
       unsubscribeStudent = null;
+    }
+    // The archive stream is admin-only. Without this it would outlive the
+    // session and fire a permission-denied toast for the next signed-in user.
+    if (unsubscribeArchives) {
+      unsubscribeArchives();
+      unsubscribeArchives = null;
     }
   }
 });
@@ -475,6 +502,7 @@ function showStudentView() {
   teachersView.style.display = "none";
   logView.style.display = "none";
   scoreboardView.style.display = "none";
+  archiveView.style.display = "none";
   accessDenied.style.display = "none";
   studentView.style.display = "block";
   userAvatar.src = currentUser?.photoURL || "";
@@ -486,6 +514,7 @@ function showStudentView() {
   teachersToggleBtn.style.display = "none";
   logToggleBtn.style.display = "none";
   scoreboardToggleBtn.style.display = "none";
+  archiveToggleBtn.style.display = "none";
 
   renderStudentView();
 }
@@ -584,6 +613,7 @@ function showDashboardView() {
   teachersView.style.display = "none";
   logView.style.display = "none";
   scoreboardView.style.display = "none";
+  archiveView.style.display = "none";
   accessDenied.style.display = "none";
   userAvatar.src = currentUser?.photoURL || "";
   userAvatar.style.display = currentUser?.photoURL ? "block" : "none";
@@ -593,6 +623,7 @@ function showDashboardView() {
   manageToggleBtn.style.display = isAdmin() ? "" : "none";
   teachersToggleBtn.style.display = isAdmin() ? "" : "none";
   logToggleBtn.style.display = isAdmin() ? "" : "none";
+  archiveToggleBtn.style.display = isAdmin() ? "" : "none";
   scoreboardToggleBtn.style.display = "";
   studentView.style.display = "none";
 
@@ -614,6 +645,7 @@ function showAccessDenied() {
   teachersView.style.display = "none";
   logView.style.display = "none";
   scoreboardView.style.display = "none";
+  archiveView.style.display = "none";
   studentView.style.display = "none";
   loadingState.style.display = "none";
   emptyState.style.display = "none";
@@ -629,6 +661,7 @@ function showAccessDenied() {
   teachersToggleBtn.style.display = "none";
   logToggleBtn.style.display = "none";
   scoreboardToggleBtn.style.display = "none";
+  archiveToggleBtn.style.display = "none";
 
   const uidDisplay = document.getElementById("userUidDisplay");
   if (uidDisplay && currentUser) {
@@ -658,8 +691,10 @@ manageToggleBtn.addEventListener("click", () => {
   teachersView.style.display = "none";
   logView.style.display = "none";
   scoreboardView.style.display = "none";
+  archiveView.style.display = "none";
   if (unsubscribeTeachers) { unsubscribeTeachers(); unsubscribeTeachers = null; }
   if (unsubscribeLog) { unsubscribeLog(); unsubscribeLog = null; }
+  if (unsubscribeArchives) { unsubscribeArchives(); unsubscribeArchives = null; }
   manageView.style.display = "block";
   renderManageStudentList();
 });
@@ -677,8 +712,10 @@ scoreboardToggleBtn.addEventListener("click", () => {
   manageView.style.display = "none";
   teachersView.style.display = "none";
   logView.style.display = "none";
+  archiveView.style.display = "none";
   if (unsubscribeTeachers) { unsubscribeTeachers(); unsubscribeTeachers = null; }
   if (unsubscribeLog) { unsubscribeLog(); unsubscribeLog = null; }
+  if (unsubscribeArchives) { unsubscribeArchives(); unsubscribeArchives = null; }
   scoreboardView.style.display = "block";
   renderScoreboard();
 });
@@ -705,7 +742,9 @@ logToggleBtn.addEventListener("click", () => {
   manageView.style.display = "none";
   teachersView.style.display = "none";
   scoreboardView.style.display = "none";
+  archiveView.style.display = "none";
   if (unsubscribeTeachers) { unsubscribeTeachers(); unsubscribeTeachers = null; }
+  if (unsubscribeArchives) { unsubscribeArchives(); unsubscribeArchives = null; }
   logView.style.display = "block";
   populateLogStudentFilter();
   setupLogListener();
@@ -726,7 +765,9 @@ teachersToggleBtn.addEventListener("click", () => {
   manageView.style.display = "none";
   logView.style.display = "none";
   scoreboardView.style.display = "none";
+  archiveView.style.display = "none";
   if (unsubscribeLog) { unsubscribeLog(); unsubscribeLog = null; }
+  if (unsubscribeArchives) { unsubscribeArchives(); unsubscribeArchives = null; }
   teachersView.style.display = "block";
   setupTeachersListener();
 });
@@ -1382,9 +1423,11 @@ document.getElementById("homeLink")?.addEventListener("click", (e) => {
   teachersView.style.display = "none";
   logView.style.display = "none";
   scoreboardView.style.display = "none";
+  archiveView.style.display = "none";
   dashboardView.style.display = "block";
   if (unsubscribeTeachers) { unsubscribeTeachers(); unsubscribeTeachers = null; }
   if (unsubscribeLog) { unsubscribeLog(); unsubscribeLog = null; }
+  if (unsubscribeArchives) { unsubscribeArchives(); unsubscribeArchives = null; }
 });
 
 /* ========================================
@@ -1887,6 +1930,7 @@ if (studentHistoryModal) {
 document.addEventListener("keydown", (e) => {
   if (e.key !== "Escape") return;
   if (studentHistoryModal && studentHistoryModal.style.display === "flex") closeStudentHistory();
+  if (archiveDetailModal && archiveDetailModal.style.display === "flex") closeArchiveDetail();
   if (topStudentsModal && topStudentsModal.style.display === "flex") closeTopStudents();
   if (topTeachersModal && topTeachersModal.style.display === "flex") closeTopTeachers();
 });
@@ -2594,3 +2638,351 @@ manageStudentBody.addEventListener("click", async (e) => {
     }
   }
 });
+
+/* ========================================
+   ARCHIVE — snapshot the current status of all students + teachers
+   ----------------------------------------
+   Admin-only. "Archive current status" reads BOTH collections fresh at
+   click time (never the live listener state, which may be stale or not
+   subscribed at all), stores one document in the `archives` collection and
+   downloads the same snapshot as .xlsx. Past archives are listed in their
+   own view, previewed in a detail modal and can be deleted. There is
+   deliberately no restore.
+   ======================================== */
+
+// Listener + render for the archive table.
+function setupArchiveListener() {
+  if (unsubscribeArchives) unsubscribeArchives();
+
+  const q = query(
+    collection(db, "archives"),
+    orderBy("createdAt", "desc"),
+    limit(50)
+  );
+
+  unsubscribeArchives = onSnapshot(
+    q,
+    (snapshot) => {
+      allArchives = [];
+      snapshot.forEach((d) => allArchives.push({ id: d.id, ...d.data() }));
+      renderArchiveList();
+    },
+    (error) => {
+      console.error("Archives listener error:", error);
+      showToast("Failed to load archives.", "error");
+    }
+  );
+}
+
+function renderArchiveList() {
+  if (!archiveTableBody) return;
+  if (archiveCount) archiveCount.textContent = allArchives.length;
+
+  if (allArchives.length === 0) {
+    archiveTableBody.innerHTML = `<tr><td colspan="6" class="student-table-empty">No archives yet. Click "Archive current status".</td></tr>`;
+    return;
+  }
+
+  // Rows are rebuilt with innerHTML on every snapshot, so the click handlers
+  // are delegated on archiveTableBody below.
+  archiveTableBody.innerHTML = allArchives
+    .map((a) => `
+      <tr>
+        <td style="white-space:nowrap;">${escapeHtml(formatFullTime(a.createdAt))}</td>
+        <td>${escapeHtml(a.createdBy || "—")}</td>
+        <td>${escapeHtml(a.label || "—")}</td>
+        <td>${escapeHtml(a.studentCount || 0)}</td>
+        <td>${escapeHtml(a.teacherCount || 0)}</td>
+        <td class="archive-row-actions">
+          <button class="btn btn-small btn-outline archive-view-btn" data-archive-id="${escapeAttr(a.id)}">View</button>
+          <button class="btn btn-small btn-outline archive-download-btn" data-archive-id="${escapeAttr(a.id)}">⬇️ Excel</button>
+          <button class="btn-icon archive-delete-btn" data-archive-id="${escapeAttr(a.id)}" title="Delete archive">🗑</button>
+        </td>
+      </tr>`)
+    .join("");
+}
+
+// Snapshot the live collections and download the same payload. Reads are done
+// here (not from allStudents / the teacher listener) so a stale client cache
+// can never produce a stale archive.
+async function archiveNow() {
+  if (!isAdmin()) { showToast("Only the admin can archive.", "error"); return; }
+
+  // Capture innerHTML, not textContent: assigning textContent would delete the
+  // button's inline <svg> icon and it would never come back.
+  const originalHtml = archiveNowBtn.innerHTML;
+  archiveNowBtn.disabled = true;
+  archiveNowBtn.textContent = "Archiving…";
+
+  let payload = null;
+  try {
+    const [studentsSnap, teachersSnap] = await Promise.all([
+      getDocs(collection(db, "students")),
+      getDocs(collection(db, "allowedUsers"))
+    ]);
+
+    // Normalise defensively: Firestore rejects `undefined`, so every missing
+    // field becomes "" or 0.
+    const students = [];
+    studentsSnap.forEach((d) => {
+      const s = d.data() || {};
+      students.push({
+        id: d.id,
+        name: s.name || "",
+        house: s.house || "",
+        className: s.className || "",
+        email: s.email || "",
+        merits: typeof s.merits === "number" ? s.merits : 0,
+        uniformPoints: typeof s.uniformPoints === "number" ? s.uniformPoints : 0
+      });
+    });
+
+    const teachers = [];
+    teachersSnap.forEach((d) => {
+      const t = d.data() || {};
+      // allowedUsers doc ids are the lowercased email, so fall back to it
+      // when the stored `email` field is missing.
+      teachers.push({
+        email: t.email || d.id || "",
+        role: t.role || "",
+        homeroom: t.homeroom || ""
+      });
+    });
+
+    payload = {
+      createdAt: serverTimestamp(),
+      createdBy: (currentUser?.email || "").toLowerCase(),
+      label: "Archive " + new Date().toLocaleString(),
+      studentCount: students.length,
+      teacherCount: teachers.length,
+      students,
+      teachers
+    };
+
+    // Firestore caps one document at 1 MiB. Measure UTF-8 bytes rather than JS
+    // string length — Thai names and emoji cost 3-4 bytes per character, so a
+    // char count can understate the real document size. Keep a safety margin:
+    // when the snapshot is too large, skip the save but still hand over the
+    // Excel file.
+    const payloadJson = JSON.stringify({ students, teachers });
+    const payloadSize = new TextEncoder().encode(payloadJson).length;
+    if (payloadSize > 900000) {
+      showToast("Snapshot is too large to store in Firestore — downloading the Excel file only.", "error");
+    } else {
+      await addDoc(collection(db, "archives"), payload);
+      showToast(`Archived ${students.length} students and ${teachers.length} teachers. ✅`, "success");
+    }
+  } catch (error) {
+    console.error("Error creating archive:", error);
+    showToast("Failed to create the archive. Please try again.", "error");
+  } finally {
+    archiveNowBtn.disabled = false;
+    archiveNowBtn.innerHTML = originalHtml;
+  }
+
+  // Same click saves and downloads, even when the save was skipped or failed.
+  if (payload) await downloadArchive(payload);
+}
+
+// Build a two-sheet workbook: every snapshot field, full list (no 500 cap).
+async function downloadArchive(archive) {
+  if (!archive) return;
+
+  let XLSX;
+  try {
+    XLSX = await loadXLSX();
+  } catch {
+    showToast("Couldn't load the spreadsheet library. Check your connection and try again.", "error");
+    return;
+  }
+
+  const students = Array.isArray(archive.students) ? archive.students : [];
+  const teachers = Array.isArray(archive.teachers) ? archive.teachers : [];
+
+  const studentRows = [
+    ["Name", "House", "Class", "Email", "Behaviour Points", "Uniform Points"],
+    ...students.map((s) => [
+      s.name || "",
+      s.house || "",
+      s.className || "",
+      s.email || "",
+      typeof s.merits === "number" ? s.merits : 0,
+      typeof s.uniformPoints === "number" ? s.uniformPoints : 0
+    ])
+  ];
+  const wsStudents = XLSX.utils.aoa_to_sheet(studentRows);
+  wsStudents["!cols"] = [{ wch: 24 }, { wch: 10 }, { wch: 10 }, { wch: 30 }, { wch: 16 }, { wch: 14 }];
+
+  const teacherRows = [
+    ["Email", "Role", "Homeroom"],
+    ...teachers.map((t) => [t.email || "", roleLabel(t.role), t.homeroom || ""])
+  ];
+  const wsTeachers = XLSX.utils.aoa_to_sheet(teacherRows);
+  wsTeachers["!cols"] = [{ wch: 30 }, { wch: 14 }, { wch: 12 }];
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, wsStudents, "Students");
+  XLSX.utils.book_append_sheet(wb, wsTeachers, "Teachers");
+
+  // Stored archives carry a Firestore Timestamp; a just-created payload still
+  // holds the serverTimestamp() sentinel, so fall back to "now" when
+  // createdAt can't be read as a date.
+  let when = new Date();
+  const raw = archive.createdAt;
+  if (raw && typeof raw.toDate === "function") {
+    when = raw.toDate();
+  } else if (raw) {
+    const parsed = new Date(raw);
+    if (!isNaN(parsed.getTime())) when = parsed;
+  }
+  const pad = (n) => String(n).padStart(2, "0");
+  const stamp = `${when.getFullYear()}-${pad(when.getMonth() + 1)}-${pad(when.getDate())}-${pad(when.getHours())}${pad(when.getMinutes())}`;
+
+  XLSX.writeFile(wb, `sisb-archive-${stamp}.xlsx`);
+}
+
+// Detail modal — preview an archive (capped) and remember it for re-download.
+const ARCHIVE_PREVIEW_LIMIT = 500;
+
+function openArchiveDetail(id) {
+  if (!isAdmin()) { showToast("Only the admin can view archives.", "error"); return; }
+  const archive = allArchives.find((a) => a.id === id);
+  if (!archive) { showToast("Archive not found.", "error"); return; }
+
+  const students = Array.isArray(archive.students) ? archive.students : [];
+  const teachers = Array.isArray(archive.teachers) ? archive.teachers : [];
+
+  archiveDetailTitle.textContent = archive.label || "Archive";
+  archiveDetailMeta.textContent = `${formatFullTime(archive.createdAt)} · ${archive.createdBy || "—"}`;
+  archiveDetailSummary.innerHTML =
+    `<span class="history-stat"><strong>${students.length}</strong> student${students.length !== 1 ? "s" : ""}</span>` +
+    `<span class="history-stat"><strong>${teachers.length}</strong> teacher${teachers.length !== 1 ? "s" : ""}</span>`;
+
+  // A big roster would make the modal unusable — the Excel file has it all.
+  const shownStudents = students.slice(0, ARCHIVE_PREVIEW_LIMIT);
+  archiveDetailStudentsBody.innerHTML = shownStudents.length === 0
+    ? `<tr><td colspan="6" class="student-table-empty">No students in this archive.</td></tr>`
+    : shownStudents.map((s) => {
+        const house = HOUSES.includes(s.house) ? s.house : "";
+        const houseCell = s.house
+          ? `${house ? `<span class="house-dot house-dot-${house.toLowerCase()}"></span>` : ""}${escapeHtml(s.house)}`
+          : "—";
+        return `<tr>
+          <td>${escapeHtml(s.name || "—")}</td>
+          <td>${houseCell}</td>
+          <td>${s.className ? escapeHtml(s.className) : "—"}</td>
+          <td>${typeof s.merits === "number" ? s.merits : 0}</td>
+          <td>${typeof s.uniformPoints === "number" ? s.uniformPoints : 0}</td>
+          <td><span class="student-email-cell">${escapeHtml(s.email || "—")}</span></td>
+        </tr>`;
+      }).join("");
+  archiveDetailStudentsNote.textContent = students.length > ARCHIVE_PREVIEW_LIMIT
+    ? `Showing first ${ARCHIVE_PREVIEW_LIMIT} of ${students.length} — download the Excel for the full list.`
+    : "";
+
+  const shownTeachers = teachers.slice(0, ARCHIVE_PREVIEW_LIMIT);
+  archiveDetailTeachersBody.innerHTML = shownTeachers.length === 0
+    ? `<tr><td colspan="3" class="student-table-empty">No teachers in this archive.</td></tr>`
+    : shownTeachers.map((t) => `<tr>
+        <td>${escapeHtml(t.email || "—")}</td>
+        <td>${escapeHtml(roleLabel(t.role))}</td>
+        <td>${t.homeroom ? escapeHtml(t.homeroom) : "—"}</td>
+      </tr>`).join("");
+  archiveDetailTeachersNote.textContent = teachers.length > ARCHIVE_PREVIEW_LIMIT
+    ? `Showing first ${ARCHIVE_PREVIEW_LIMIT} of ${teachers.length} — download the Excel for the full list.`
+    : "";
+
+  openArchiveId = id;
+  archiveDetailModal.style.display = "flex";
+  document.body.style.overflow = "hidden";
+}
+
+function closeArchiveDetail() {
+  if (archiveDetailModal) archiveDetailModal.style.display = "none";
+  document.body.style.overflow = "";
+  openArchiveId = null;
+}
+
+async function deleteArchive(id) {
+  if (!isAdmin()) { showToast("Only the admin can delete archives.", "error"); return; }
+  const archive = allArchives.find((a) => a.id === id);
+  const when = archive ? formatFullTime(archive.createdAt) : "this archive";
+  if (!confirm(`Delete the archive from ${when}? This cannot be undone.`)) return;
+
+  try {
+    await deleteDoc(doc(db, "archives", id));
+    showToast("Archive deleted.", "info");
+  } catch (error) {
+    console.error("Error deleting archive:", error);
+    showToast("Failed to delete the archive. Please try again.", "error");
+  }
+}
+
+/* Archive view toggling */
+if (archiveToggleBtn) {
+  archiveToggleBtn.addEventListener("click", () => {
+    if (!isAdmin()) { showToast("Only the admin can view archives.", "error"); return; }
+    dashboardView.style.display = "none";
+    manageView.style.display = "none";
+    teachersView.style.display = "none";
+    logView.style.display = "none";
+    scoreboardView.style.display = "none";
+    // Leaving these views stops their listeners, exactly like the other
+    // view-toggle handlers do.
+    if (unsubscribeTeachers) { unsubscribeTeachers(); unsubscribeTeachers = null; }
+    if (unsubscribeLog) { unsubscribeLog(); unsubscribeLog = null; }
+    archiveView.style.display = "block";
+    setupArchiveListener();
+  });
+}
+
+if (backFromArchiveBtn) {
+  backFromArchiveBtn.addEventListener("click", () => {
+    archiveView.style.display = "none";
+    dashboardView.style.display = "block";
+    if (unsubscribeArchives) { unsubscribeArchives(); unsubscribeArchives = null; }
+  });
+}
+
+if (archiveNowBtn) archiveNowBtn.addEventListener("click", archiveNow);
+
+// One delegated listener for the archive table (rows are rebuilt with
+// innerHTML on every snapshot).
+if (archiveTableBody) {
+  archiveTableBody.addEventListener("click", async (e) => {
+    const viewBtn = e.target.closest(".archive-view-btn");
+    if (viewBtn) { openArchiveDetail(viewBtn.dataset.archiveId); return; }
+
+    const downloadBtn = e.target.closest(".archive-download-btn");
+    if (downloadBtn) {
+      if (!isAdmin()) { showToast("Only the admin can download archives.", "error"); return; }
+      const archive = allArchives.find((a) => a.id === downloadBtn.dataset.archiveId);
+      if (!archive) { showToast("Archive not found.", "error"); return; }
+      await downloadArchive(archive);
+      return;
+    }
+
+    const deleteBtn = e.target.closest(".archive-delete-btn");
+    if (deleteBtn) { deleteArchive(deleteBtn.dataset.archiveId); return; }
+  });
+}
+
+/* Archive detail modal wiring */
+if (archiveDetailCloseBtn) archiveDetailCloseBtn.addEventListener("click", closeArchiveDetail);
+
+if (archiveDetailDownloadBtn) {
+  archiveDetailDownloadBtn.addEventListener("click", async () => {
+    if (!isAdmin()) { showToast("Only the admin can download archives.", "error"); return; }
+    if (!openArchiveId) return;
+    const archive = allArchives.find((a) => a.id === openArchiveId);
+    if (!archive) { showToast("Archive not found.", "error"); return; }
+    await downloadArchive(archive);
+  });
+}
+
+// Match the other modals: clicking the overlay backdrop closes the dialog.
+if (archiveDetailModal) {
+  archiveDetailModal.addEventListener("click", (e) => {
+    if (e.target === archiveDetailModal) closeArchiveDetail();
+  });
+}

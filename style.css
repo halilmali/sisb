@@ -1829,6 +1829,71 @@ body {
 }
 
 /* ========================================
+   ARCHIVE
+   ======================================== */
+.archive-intro {
+  max-width: 75ch;
+  margin-bottom: 18px;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: var(--color-text-secondary);
+}
+
+/* Wider dialog for the archive detail modal. Overrides only what differs
+   from .modal-dialog (width cap, height cap, scrolling); everything else
+   — radius, shadow, flex column, border — is inherited from it. */
+.modal-dialog-wide {
+  max-width: 1000px;
+  width: 95vw;
+  max-height: 88vh;
+  overflow-y: auto;
+}
+
+/* Row of summary chips under the archive detail header */
+.archive-detail-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 14px 22px 4px;
+  font-size: 0.8rem;
+  color: var(--color-text-secondary);
+}
+
+.archive-detail-summary strong {
+  color: var(--color-text);
+}
+
+/* Students block / teachers block inside the archive detail modal */
+.archive-detail-block {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 14px;
+  padding: 0 22px;
+}
+
+/* Long rosters scroll inside the modal instead of stretching it */
+.archive-detail-wrap {
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.archive-detail-note {
+  min-height: 1.2em;
+  font-size: 0.75rem;
+  color: var(--color-text-tertiary);
+}
+
+/* Per-row action buttons in the Saved Archives table */
+.archive-row-actions {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ========================================
    RESPONSIVE
    ======================================== */
 @media (max-width: 1100px) {
@@ -1964,6 +2029,16 @@ body {
 
   .student-table-wrap {
     -webkit-overflow-scrolling: touch;
+  }
+
+  /* Archive detail modal: full width and a shorter roster scroll area on phones */
+  .modal-dialog-wide {
+    width: 100%;
+    max-height: 92vh;
+  }
+
+  .archive-detail-wrap {
+    max-height: 220px;
   }
 }
 

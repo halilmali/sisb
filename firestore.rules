@@ -205,5 +205,15 @@ service cloud.firestore {
       allow create: if isLogAuthorized();
       allow update, delete: if isAdmin();
     }
+
+    // Status archives — admin-only for every operation. Unlike students /
+    // meritLog, an archive doc holds the FULL roster in one document (every
+    // student's points plus every teacher's email, role and homeroom), so a
+    // signed-in teacher must not be able to read it. Archives are an immutable
+    // record of a moment; the app never restores from them, but admins may
+    // delete stale snapshots to reclaim space.
+    match /archives/{archiveId} {
+      allow read, create, update, delete: if isAdmin();
+    }
   }
 }
