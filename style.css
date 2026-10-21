@@ -782,23 +782,23 @@ body {
   transform: scale(0.95);
 }
 
-/* +3 button (admin / house leader only) */
-.merit-btn-plus3 {
-  width: 34px;
+/* +10 button (admin / house leader only) */
+.merit-btn-plus10 {
+  width: 38px;
   background: var(--house-yellow-light);
   color: var(--house-yellow);
   font-size: 0.6rem;
   font-weight: 800;
 }
 
-.merit-btn-plus3:hover {
+.merit-btn-plus10:hover {
   background: var(--house-yellow);
   color: white;
   transform: scale(1.1);
   box-shadow: 0 4px 12px rgba(202, 138, 4, 0.4);
 }
 
-.merit-btn-plus3:active {
+.merit-btn-plus10:active {
   transform: scale(0.95);
 }
 
@@ -2078,8 +2078,8 @@ body {
     font-size: 0.85rem;
   }
 
-  .merit-btn-plus3 {
-    width: 30px;
+  .merit-btn-plus10 {
+    width: 34px;
     font-size: 0.55rem;
   }
 
@@ -2145,8 +2145,8 @@ body {
     font-size: 0.95rem;
   }
 
-  .merit-btn-plus3 {
-    width: 36px;
+  .merit-btn-plus10 {
+    width: 40px;
     font-size: 0.6rem;
   }
 

@@ -131,8 +131,8 @@ function isAdmin() {
   return currentUser && adminEmails.includes(currentUser.email);
 }
 
-// LH (house leader) users and admins may award the +3 bonus.
-function canGive3Points() {
+// LH (house leader) users and admins may award the +10 bonus.
+function canGive10Points() {
   return isAdmin() || currentUserRole === "LH";
 }
 
@@ -889,7 +889,7 @@ function renderStudents(students) {
               ${isAdmin() ? `<button class="merit-btn merit-btn-minus" data-type="${pointType}" data-student-id="${student.id}" data-student-name="${escapeAttr(student.name)}" data-house="${student.house}" title="Remove ${pointLabel} point from ${escapeAttr(student.name)}">−</button>` : ''}
               <span class="merit-count" id="${pointType}-${student.id}">${pointType === "uniform" ? (student.uniformPoints || 0) : (student.merits || 0)}</span>
               <button class="merit-btn merit-btn-plus" data-type="${pointType}" data-student-id="${student.id}" data-student-name="${escapeAttr(student.name)}" data-house="${student.house}" title="Give ${pointLabel} point to ${escapeAttr(student.name)}">+</button>
-              ${canGive3Points() ? `<button class="merit-btn merit-btn-plus3" data-type="${pointType}" data-student-id="${student.id}" data-student-name="${escapeAttr(student.name)}" data-house="${student.house}" title="Give 3 ${pointLabel} points (admin / house leader only)">+3</button>` : ''}
+              ${canGive10Points() ? `<button class="merit-btn merit-btn-plus10" data-type="${pointType}" data-student-id="${student.id}" data-student-name="${escapeAttr(student.name)}" data-house="${student.house}" title="Give 10 ${pointLabel} points (admin / house leader only)">+10</button>` : ''}
             </div>
           </div>
         </div>`;
@@ -1186,22 +1186,22 @@ async function handlePointClick(btn) {
   const student = allStudents.find((s) => s.id === studentId);
   const type = btn.dataset.type === "uniform" ? "uniform" : "honor";
   const isMinus = btn.classList.contains("merit-btn-minus");
-  const isPlus3 = btn.classList.contains("merit-btn-plus3");
-  const change = isMinus ? -1 : (isPlus3 ? 3 : 1);
+  const isPlus10 = btn.classList.contains("merit-btn-plus10");
+  const change = isMinus ? -1 : (isPlus10 ? 10 : 1);
   const label = type === "uniform" ? "uniform point" : "behaviour point";
   const pluralLabel = Math.abs(change) === 1 ? label : label + "s";
   const isUniformGrant = type === "uniform" && change > 0;
 
-  // +3 is restricted to admins and house leaders (LH).
-  if (isPlus3 && !canGive3Points()) {
-    showToast("Only admins or house leaders can give 3 points.", "error");
+  // +10 is restricted to admins and house leaders (LH).
+  if (isPlus10 && !canGive10Points()) {
+    showToast("Only admins or house leaders can give 10 points.", "error");
     return;
   }
 
-  // +3 is a bulk award — always confirm so accidental taps can't fire it.
-  if (isPlus3) {
+  // +10 is a bulk award — always confirm so accidental taps can't fire it.
+  if (isPlus10) {
     const ok = confirm(
-      `Give 3 ${pluralLabel} to ${studentName} (${house || "no house"})?\n\nType: ${type === "uniform" ? "Uniform" : "Behaviour Point"}\nThis will be recorded in the activity log.`
+      `Give 10 ${pluralLabel} to ${studentName} (${house || "no house"})?\n\nType: ${type === "uniform" ? "Uniform" : "Behaviour Point"}\nThis will be recorded in the activity log.`
     );
     if (!ok) return;
   }
